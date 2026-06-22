@@ -1,10 +1,10 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth, type UserRole } from "@/contexts/AuthContext";
 
 // Pages
 import Home from "@/pages/home";
@@ -21,6 +21,13 @@ import Moderator from "@/pages/moderator";
 import Match from "@/pages/match";
 
 const queryClient = new QueryClient();
+
+/** Redirect to /dashboard if the user doesn't have the required role */
+function RoleGuard({ allow, children }: { allow: UserRole[]; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user || !allow.includes(user.role)) return <Redirect to="/dashboard" />;
+  return <>{children}</>;
+}
 
 function Router() {
   return (
