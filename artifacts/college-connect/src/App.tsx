@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 import { AuthProvider, useAuth, type UserRole } from "@/contexts/AuthContext";
+import { SubmissionsProvider } from "@/contexts/SubmissionsContext";
 
 // Pages
 import Home from "@/pages/home";
@@ -77,12 +78,14 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
+        <SubmissionsProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </SubmissionsProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
