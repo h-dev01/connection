@@ -32,6 +32,20 @@ interface AuthContextValue {
 
 const STORAGE_KEY = "cc_user";
 
+/** In-memory fallback when localStorage is blocked (e.g. inside iframes) */
+let _memoryStore: string | null = null;
+const safeStorage = {
+  get(): string | null {
+    try { return localStorage.getItem(STORAGE_KEY); } catch { return _memoryStore; }
+  },
+  set(val: string) {
+    try { localStorage.setItem(STORAGE_KEY, val); } catch { _memoryStore = val; }
+  },
+  remove() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch { _memoryStore = null; }
+  },
+};
+
 /** Demo credentials per role — remove when real auth is wired */
 const DEMO_USERS: Record<UserRole, AuthUser & { password: string }> = {
   student: {
@@ -70,7 +84,7 @@ const AuthContext = createContext<AuthContextValue>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = safeStorage.get();
       return stored ? (JSON.parse(stored) as AuthUser) : null;
     } catch {
       return null;
@@ -79,9 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+      safeStorage.set(JSON.stringify(user));
     } else {
-      localStorage.removeItem(STORAGE_KEY);
+      safeStorage.remove();
     }
   }, [user]);
 
@@ -118,9 +132,3 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-/** Returns the default landing route for each role after login */
-export function homeRouteForRole(role: UserRole): string {
-  if (role === "admin") return "/admin";
-  if (role === "low_admin") return "/moderator";
-  return "/dashboard";
-}

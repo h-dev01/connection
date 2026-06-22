@@ -1,11 +1,13 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
+import { AuthProvider, useAuth, type UserRole } from "@/contexts/AuthContext";
 
-// Real page components — each lives in src/pages/
+// Pages
+import Home from "@/pages/home";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Study from "@/pages/study";
@@ -19,44 +21,112 @@ import Moderator from "@/pages/moderator";
 
 const queryClient = new QueryClient();
 
+/* ─────────────────────────────────────────────────────────
+   ProtectedRoute — redirects to /login if not authenticated.
+   Optionally restricts to specific roles.
+───────────────────────────────────────────────────────── */
+function ProtectedRoute({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles?: UserRole[];
+}) {
+  const { user, isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  // If a role restriction is set and user doesn't qualify, redirect to their home
+  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+    if (user.role === "admin") return <Redirect to="/admin" />;
+    if (user.role === "low_admin") return <Redirect to="/moderator" />;
+    return <Redirect to="/dashboard" />;
+  }
+
+  return <>{children}</>;
+}
+
+/* ─────────────────────────────────────────────────────────
+   PublicOnlyRoute — if already logged in, go home.
+   Used for /login and / (home) when authenticated.
+───────────────────────────────────────────────────────── */
+function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuth();
+  if (isAuthenticated && user) {
+    if (user.role === "admin") return <Redirect to="/admin" />;
+    if (user.role === "low_admin") return <Redirect to="/moderator" />;
+    return <Redirect to="/dashboard" />;
+  }
+  return <>{children}</>;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Router — all app routes
+───────────────────────────────────────────────────────── */
 function Router() {
   return (
     <Switch>
-      {/* Login has its own full-page layout — no sidebar */}
-      <Route path="/login" component={Login} />
-
-      {/* Root → redirect to dashboard */}
+      {/* Public — home landing page */}
       <Route path="/">
-        <Redirect to="/dashboard" />
+        <PublicOnlyRoute><Home /></PublicOnlyRoute>
       </Route>
 
-      {/* Sidebar-wrapped pages */}
+      {/* Public — login (redirects away if already logged in) */}
+      <Route path="/login">
+        <PublicOnlyRoute><Login /></PublicOnlyRoute>
+      </Route>
+
+      {/* Student + admin: core pages */}
       <Route path="/dashboard">
-        <SidebarLayout><Dashboard /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Dashboard /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/study">
-        <SidebarLayout><Study /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Study /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/marketplace">
-        <SidebarLayout><Marketplace /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Marketplace /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/community">
-        <SidebarLayout><Community /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Community /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/career">
-        <SidebarLayout><Career /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Career /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/clubs">
-        <SidebarLayout><Clubs /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Clubs /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/profile">
-        <SidebarLayout><Profile /></SidebarLayout>
+        <ProtectedRoute>
+          <SidebarLayout><Profile /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
-      <Route path="/admin">
-        <SidebarLayout><Admin /></SidebarLayout>
-      </Route>
+
+      {/* Low admin + admin: moderator tools */}
       <Route path="/moderator">
-        <SidebarLayout><Moderator /></SidebarLayout>
+        <ProtectedRoute allowedRoles={["low_admin", "admin"]}>
+          <SidebarLayout><Moderator /></SidebarLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Admin only: global health dashboard */}
+      <Route path="/admin">
+        <ProtectedRoute allowedRoles={["admin"]}>
+          <SidebarLayout><Admin /></SidebarLayout>
+        </ProtectedRoute>
       </Route>
 
       <Route component={NotFound} />
@@ -64,17 +134,20 @@ function Router() {
   );
 }
 
-function App() {
+/* ─────────────────────────────────────────────────────────
+   App — providers wrapper
+───────────────────────────────────────────────────────── */
+export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AuthProvider>
   );
 }
-
-export default App;
