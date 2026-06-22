@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 import { AuthProvider, useAuth, type UserRole } from "@/contexts/AuthContext";
 import { SubmissionsProvider } from "@/contexts/SubmissionsContext";
+import { ProfileCompleteModal } from "@/components/shared/ProfileCompleteModal";
 
 // Pages
 import Home from "@/pages/home";
@@ -83,6 +84,7 @@ export default function App() {
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
             </WouterRouter>
+            <ProfileCompleteModal />
             <Toaster />
           </TooltipProvider>
         </SubmissionsProvider>
