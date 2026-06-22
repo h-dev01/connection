@@ -154,9 +154,8 @@ export function DeleteConfirm({
 
 /**
  * ActionMenu — "⋯" dropdown
- * isOwner = true  → shows Delete
- * isOwner = false → shows Report
- * isModerator     → shows both
+ * isModerator = true  → shows Delete (+ Report)
+ * isOwner (student)   → NO delete; sees Report only on others' posts
  */
 export function ActionMenu({
   title,
@@ -187,7 +186,7 @@ export function ActionMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40">
-          {(isOwner || isModerator) && (
+          {isModerator && (
             <DropdownMenuItem
               className="text-red-600 focus:text-red-600 focus:bg-red-50 gap-2"
               onClick={() => setDeleteOpen(true)}
@@ -195,7 +194,7 @@ export function ActionMenu({
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </DropdownMenuItem>
           )}
-          {(!isOwner || isModerator) && (
+          {!isOwner && (
             <DropdownMenuItem
               className="text-amber-600 focus:text-amber-600 focus:bg-amber-50 gap-2"
               onClick={() => setReportOpen(true)}
