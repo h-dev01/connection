@@ -1,12 +1,14 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 // Pages
 import Home from "@/pages/home";
+import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Study from "@/pages/study";
 import Marketplace from "@/pages/marketplace";
@@ -22,10 +24,11 @@ const queryClient = new QueryClient();
 function Router() {
   return (
     <Switch>
-      {/* Landing home page */}
+      {/* Public pages */}
       <Route path="/" component={Home} />
+      <Route path="/login" component={Login} />
 
-      {/* App pages — no login required */}
+      {/* App pages */}
       <Route path="/dashboard">
         <SidebarLayout><Dashboard /></SidebarLayout>
       </Route>
@@ -62,12 +65,14 @@ function Router() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
