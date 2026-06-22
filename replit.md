@@ -1,36 +1,64 @@
-# [Project name]
+# CollegeConnect
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-stack Campus Super App for college students — study, connect, trade, and build your campus reputation in one place.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
+- `pnpm --filter @workspace/college-connect run dev` — run the frontend (port from $PORT)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL` — Postgres connection string, `SESSION_SECRET` — session key
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Frontend: React + Vite + Tailwind v4 + shadcn/ui + wouter + framer-motion
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
 - Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Build: esbuild (CJS bundle for API), Vite (ESM bundle for frontend)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+```
+artifacts/college-connect/src/
+  pages/            — one file per page (dashboard, study, marketplace, community, career, clubs, profile, admin, moderator, login)
+  components/
+    layout/         — SidebarLayout (dark navy sidebar, nav items)
+    ui/             — all shadcn/ui components
+  index.css         — Tailwind v4 theme (CSS vars, sidebar colors, Inter font)
+  App.tsx           — wouter routes, all pages registered
+
+artifacts/api-server/src/
+  routes/           — users, posts, study, marketplace, clubs, stats, health
+  app.ts            — Express app setup with pino-http logger
+
+lib/db/src/
+  schema/           — Drizzle ORM tables: users, posts, study_materials, listings, clubs, communities, events, internships
+  index.ts          — exports db instance + all tables
+```
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- All frontend pages use realistic mock data at the top of each file with JSDoc comments so developers can easily swap them for real API calls
+- Auth is not yet implemented — the Login page navigates directly to /dashboard; add POST /api/auth/login + session middleware when ready
+- The OpenAPI codegen (Orval) is currently bypassed because the YAML spec has parsing issues; routes use manual Zod validation instead
+- Login page does NOT use SidebarLayout — it has its own full-page split layout
+- API routes use `/api` prefix (handled by the reverse proxy from path `/api`)
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **Dashboard** — CGPA, attendance, upcoming exam countdown, recent study materials, marketplace highlights, campus feed with polls
+- **Study Hub** — filterable materials list, AI Summarizer & Exam Prep tools, career corner, academic tools
+- **Marketplace** — buy/sell items, housing (PG/hostels), local services, roommate finder
+- **Community** — campus feed, hobby communities, meetup requests, anonymous Q&A, reputation leaderboard
+- **Career** — internship listings, resume builder, interview prep, startup co-founder finder
+- **Clubs** — trending clubs, all organizations, join/start club flow
+- **Profile** — reputation hub, academic interests, project showcase, uploaded notes
+- **Admin** — global health dashboard, user analytics, system alerts, moderation queue, marketplace stats
+- **Moderator** — reported content queue, student verification, campus stats
 
 ## User preferences
 
@@ -38,7 +66,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Do NOT run `pnpm dev` at workspace root — use the workflow system or `pnpm --filter` per package
+- The API server bundles at 1.4MB because it includes pino workers — this is expected
+- codegen (`pnpm --filter @workspace/api-spec run codegen`) fails with YAML parsing error; use manual Zod validation in routes until fixed
 
 ## Pointers
 

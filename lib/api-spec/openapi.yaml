@@ -1,22 +1,43 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
+  # Do not change the title - controls generated filenames
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CollegeConnect API - Campus Super App
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User profiles
+  - name: posts
+    description: Campus feed posts
+  - name: study
+    description: Study materials
+  - name: marketplace
+    description: Buy/sell items and housing
+  - name: clubs
+    description: Campus clubs and organizations
+  - name: careers
+    description: Internships and career resources
+  - name: match
+    description: Campus match (dating, friends, study partners)
+  - name: communities
+    description: Hobby communities
+  - name: events
+    description: Campus events
+  - name: stats
+    description: Dashboard stats and analytics
+
 paths:
+  # --- Health ---------------------------------------------------------------
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +45,1105 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # --- Users / Profile ------------------------------------------------------
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user profile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  # --- Dashboard Stats ------------------------------------------------------
+  /stats/dashboard:
+    get:
+      operationId: getDashboardStats
+      tags: [stats]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /stats/admin:
+    get:
+      operationId: getAdminStats
+      tags: [stats]
+      summary: Get admin/global health stats
+      responses:
+        "200":
+          description: Admin stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
+  # --- Campus Feed / Posts --------------------------------------------------
+  /posts:
+    get:
+      operationId: listPosts
+      tags: [posts]
+      summary: List campus feed posts
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: anonymous
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+    post:
+      operationId: createPost
+      tags: [posts]
+      summary: Create a new post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+
+  /posts/{id}:
+    get:
+      operationId: getPost
+      tags: [posts]
+      summary: Get a post by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Post found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+    delete:
+      operationId: deletePost
+      tags: [posts]
+      summary: Delete a post
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /posts/{id}/like:
+    patch:
+      operationId: likePost
+      tags: [posts]
+      summary: Like or unlike a post
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Post"
+
+  /posts/trending:
+    get:
+      operationId: getTrendingPosts
+      tags: [posts]
+      summary: Get trending posts
+      responses:
+        "200":
+          description: Trending posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Post"
+
+  # --- Anonymous Q&A --------------------------------------------------------
+  /qa:
+    get:
+      operationId: listQA
+      tags: [posts]
+      summary: List anonymous Q&A questions
+      responses:
+        "200":
+          description: List of questions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QAQuestion"
+    post:
+      operationId: createQA
+      tags: [posts]
+      summary: Ask an anonymous question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QAInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QAQuestion"
+
+  # --- Study Materials ------------------------------------------------------
+  /study/materials:
+    get:
+      operationId: listStudyMaterials
+      tags: [study]
+      summary: List study materials
+      parameters:
+        - name: subject
+          in: query
+          schema:
+            type: string
+        - name: semester
+          in: query
+          schema:
+            type: string
+        - name: course
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of study materials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudyMaterial"
+    post:
+      operationId: createStudyMaterial
+      tags: [study]
+      summary: Upload a study material
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StudyMaterialInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyMaterial"
+
+  /study/materials/{id}:
+    get:
+      operationId: getStudyMaterial
+      tags: [study]
+      summary: Get study material by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyMaterial"
+
+  /study/materials/{id}/download:
+    patch:
+      operationId: incrementDownload
+      tags: [study]
+      summary: Increment download count
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyMaterial"
+
+  /study/recent:
+    get:
+      operationId: getRecentMaterials
+      tags: [study]
+      summary: Get recent study materials for dashboard
+      responses:
+        "200":
+          description: Recent materials
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StudyMaterial"
+
+  # --- Marketplace ----------------------------------------------------------
+  /marketplace/listings:
+    get:
+      operationId: listListings
+      tags: [marketplace]
+      summary: List marketplace listings
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [buy_sell, housing, service]
+      responses:
+        "200":
+          description: List of listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Listing"
+    post:
+      operationId: createListing
+      tags: [marketplace]
+      summary: Create a listing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListingInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Listing"
+
+  /marketplace/listings/{id}:
+    get:
+      operationId: getListing
+      tags: [marketplace]
+      summary: Get listing by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Listing"
+    patch:
+      operationId: updateListing
+      tags: [marketplace]
+      summary: Update a listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListingUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Listing"
+    delete:
+      operationId: deleteListing
+      tags: [marketplace]
+      summary: Delete a listing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /marketplace/highlights:
+    get:
+      operationId: getMarketplaceHighlights
+      tags: [marketplace]
+      summary: Get highlighted listings for dashboard
+      responses:
+        "200":
+          description: Highlights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Listing"
+
+  # --- Clubs ----------------------------------------------------------------
+  /clubs:
+    get:
+      operationId: listClubs
+      tags: [clubs]
+      summary: List all clubs
+      parameters:
+        - name: trending
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of clubs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Club"
+    post:
+      operationId: createClub
+      tags: [clubs]
+      summary: Create a club
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClubInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+
+  /clubs/{id}:
+    get:
+      operationId: getClub
+      tags: [clubs]
+      summary: Get club by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+
+  /clubs/{id}/join:
+    patch:
+      operationId: joinClub
+      tags: [clubs]
+      summary: Join or leave a club
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Club"
+
+  # --- Communities ----------------------------------------------------------
+  /communities:
+    get:
+      operationId: listCommunities
+      tags: [communities]
+      summary: List hobby communities
+      responses:
+        "200":
+          description: List of communities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Community"
+
+  # --- Careers --------------------------------------------------------------
+  /careers/internships:
+    get:
+      operationId: listInternships
+      tags: [careers]
+      summary: List internship listings
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, closed]
+      responses:
+        "200":
+          description: List of internships
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Internship"
+    post:
+      operationId: createInternship
+      tags: [careers]
+      summary: Post an internship listing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InternshipInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Internship"
+
+  # --- Events ---------------------------------------------------------------
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: List campus events
+      responses:
+        "200":
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Event"
+    post:
+      operationId: createEvent
+      tags: [events]
+      summary: Create an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Event"
+
+  # --- Campus Match ---------------------------------------------------------
+  /match/profiles:
+    get:
+      operationId: listMatchProfiles
+      tags: [match]
+      summary: List match profiles
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [dating, friend, study, project, cofounder]
+      responses:
+        "200":
+          description: List of match profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MatchProfile"
+    post:
+      operationId: createMatchProfile
+      tags: [match]
+      summary: Create a match profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MatchProfileInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchProfile"
+
+  /match/meetups:
+    get:
+      operationId: listMeetupRequests
+      tags: [match]
+      summary: List meetup requests
+      responses:
+        "200":
+          description: List of meetup requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MeetupRequest"
+    post:
+      operationId: createMeetupRequest
+      tags: [match]
+      summary: Create a meetup request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetupRequestInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetupRequest"
+
+  /match/meetups/{id}/respond:
+    patch:
+      operationId: respondToMeetup
+      tags: [match]
+      summary: Accept or decline meetup request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetupResponse"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetupRequest"
+
+  # --- Reputation Leaderboard -----------------------------------------------
+  /reputation/leaders:
+    get:
+      operationId: getReputationLeaders
+      tags: [users]
+      summary: Get top reputation leaders
+      responses:
+        "200":
+          description: Top users by reputation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReputationLeader"
+
+# --- Schemas ------------------------------------------------------------------
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    # -- User ----------------------------------------------------------------
+    User:
+      type: object
+      required: [id, name, email, college, department, year, role, reputationScore, reputationLevel, verified]
+      properties:
+        id:          { type: integer }
+        name:        { type: string }
+        email:       { type: string }
+        college:     { type: string }
+        department:  { type: string }
+        year:        { type: integer }
+        bio:         { type: ["string", "null"] }
+        avatarUrl:   { type: ["string", "null"] }
+        role:        { type: string, enum: [student, low_admin, high_admin] }
+        reputationScore: { type: integer }
+        reputationLevel: { type: string, enum: [bronze, silver, gold, platinum] }
+        verified:    { type: boolean }
+        interests:   { type: array, items: { type: string } }
+        skills:      { type: array, items: { type: string } }
+        cgpa:        { type: ["number", "null"] }
+        attendance:  { type: ["number", "null"] }
+        createdAt:   { type: string }
+
+    UserInput:
+      type: object
+      required: [name, email, college, department, year]
+      properties:
+        name:        { type: string }
+        email:       { type: string }
+        college:     { type: string }
+        department:  { type: string }
+        year:        { type: integer }
+        bio:         { type: string }
+        avatarUrl:   { type: string }
+        interests:   { type: array, items: { type: string } }
+        skills:      { type: array, items: { type: string } }
+        cgpa:        { type: number }
+
+    UserUpdate:
+      type: object
+      properties:
+        name:        { type: string }
+        bio:         { type: string }
+        avatarUrl:   { type: string }
+        interests:   { type: array, items: { type: string } }
+        skills:      { type: array, items: { type: string } }
+        cgpa:        { type: number }
+        attendance:  { type: number }
+
+    # -- Stats ----------------------------------------------------------------
+    DashboardStats:
+      type: object
+      required: [cgpa, attendance, upcomingExam, totalMaterials, totalListings, totalPosts, totalClubs]
+      properties:
+        cgpa:           { type: number }
+        cgpaTrend:      { type: string }
+        attendance:     { type: number }
+        attendanceStatus: { type: string }
+        upcomingExam:   { type: string }
+        examTimeLeft:   { type: string }
+        totalMaterials: { type: integer }
+        totalListings:  { type: integer }
+        totalPosts:     { type: integer }
+        totalClubs:     { type: integer }
+
+    AdminStats:
+      type: object
+      required: [totalActiveUsers, verifiedUsers, unverifiedUsers, dailyMarketplaceVolume, openReports, pendingVerifications]
+      properties:
+        totalActiveUsers:       { type: integer }
+        totalActiveUsersTrend:  { type: string }
+        verifiedUsers:          { type: integer }
+        unverifiedUsers:        { type: integer }
+        dailyMarketplaceVolume: { type: number }
+        openReports:            { type: integer }
+        pendingVerifications:   { type: integer }
+        pendingEvents:          { type: integer }
+
+    ReputationLeader:
+      type: object
+      required: [id, name, avatarUrl, reputationScore, reputationLevel, rank]
+      properties:
+        id:             { type: integer }
+        name:           { type: string }
+        avatarUrl:      { type: ["string", "null"] }
+        reputationScore:{ type: integer }
+        reputationLevel:{ type: string }
+        rank:           { type: integer }
+
+    # -- Post -----------------------------------------------------------------
+    Post:
+      type: object
+      required: [id, content, category, likes, commentsCount, anonymous, createdAt]
+      properties:
+        id:           { type: integer }
+        authorId:     { type: ["integer", "null"] }
+        authorName:   { type: ["string", "null"] }
+        authorAvatar: { type: ["string", "null"] }
+        authorDept:   { type: ["string", "null"] }
+        authorLevel:  { type: ["string", "null"] }
+        content:      { type: string }
+        imageUrl:     { type: ["string", "null"] }
+        category:     { type: string }
+        likes:        { type: integer }
+        commentsCount:{ type: integer }
+        anonymous:    { type: boolean }
+        createdAt:    { type: string }
+
+    PostInput:
+      type: object
+      required: [content, category]
+      properties:
+        authorId:  { type: integer }
+        content:   { type: string }
+        imageUrl:  { type: string }
+        category:  { type: string }
+        anonymous: { type: boolean }
+
+    # -- Q&A ------------------------------------------------------------------
+    QAQuestion:
+      type: object
+      required: [id, question, upvotes, repliesCount, createdAt]
+      properties:
+        id:          { type: integer }
+        question:    { type: string }
+        upvotes:     { type: integer }
+        repliesCount:{ type: integer }
+        createdAt:   { type: string }
+
+    QAInput:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string }
+
+    # -- Study Material --------------------------------------------------------
+    StudyMaterial:
+      type: object
+      required: [id, title, subject, course, semester, fileType, fileSizeMb, downloads, rating, ratingCount, verified, uploadedBy, createdAt]
+      properties:
+        id:          { type: integer }
+        title:       { type: string }
+        subject:     { type: string }
+        course:      { type: string }
+        semester:    { type: string }
+        fileType:    { type: string, enum: [pdf, pptx, docx, figma, other] }
+        fileSizeMb:  { type: number }
+        downloads:   { type: integer }
+        rating:      { type: number }
+        ratingCount: { type: integer }
+        verified:    { type: boolean }
+        uploadedBy:  { type: string }
+        sharedWith:  { type: ["string", "null"] }
+        createdAt:   { type: string }
+
+    StudyMaterialInput:
+      type: object
+      required: [title, subject, course, semester, fileType, fileSizeMb, uploadedBy]
+      properties:
+        title:      { type: string }
+        subject:    { type: string }
+        course:     { type: string }
+        semester:   { type: string }
+        fileType:   { type: string }
+        fileSizeMb: { type: number }
+        uploadedBy: { type: string }
+        sharedWith: { type: string }
+
+    # -- Marketplace Listing ---------------------------------------------------
+    Listing:
+      type: object
+      required: [id, title, price, category, listingType, sellerName, sellerRating, createdAt]
+      properties:
+        id:           { type: integer }
+        title:        { type: string }
+        description:  { type: ["string", "null"] }
+        price:        { type: number }
+        priceUnit:    { type: string }
+        category:     { type: string }
+        listingType:  { type: string, enum: [buy_sell, housing, service] }
+        imageUrl:     { type: ["string", "null"] }
+        sellerName:   { type: string }
+        sellerRating: { type: number }
+        sellerVerified: { type: boolean }
+        location:     { type: ["string", "null"] }
+        condition:    { type: ["string", "null"] }
+        featured:     { type: boolean }
+        createdAt:    { type: string }
+
+    ListingInput:
+      type: object
+      required: [title, price, category, listingType, sellerName]
+      properties:
+        title:       { type: string }
+        description: { type: string }
+        price:       { type: number }
+        priceUnit:   { type: string }
+        category:    { type: string }
+        listingType: { type: string }
+        imageUrl:    { type: string }
+        sellerName:  { type: string }
+        location:    { type: string }
+        condition:   { type: string }
+
+    ListingUpdate:
+      type: object
+      properties:
+        title:       { type: string }
+        description: { type: string }
+        price:       { type: number }
+        condition:   { type: string }
+        featured:    { type: boolean }
+
+    # -- Club -----------------------------------------------------------------
+    Club:
+      type: object
+      required: [id, name, description, category, memberCount, official, trending, createdAt]
+      properties:
+        id:          { type: integer }
+        name:        { type: string }
+        description: { type: string }
+        category:    { type: string }
+        memberCount: { type: integer }
+        official:    { type: boolean }
+        trending:    { type: boolean }
+        imageUrl:    { type: ["string", "null"] }
+        badge:       { type: ["string", "null"] }
+        nextEvent:   { type: ["string", "null"] }
+        nextEventDate: { type: ["string", "null"] }
+        createdAt:   { type: string }
+
+    ClubInput:
+      type: object
+      required: [name, description, category]
+      properties:
+        name:        { type: string }
+        description: { type: string }
+        category:    { type: string }
+        imageUrl:    { type: string }
+
+    # -- Community -------------------------------------------------------------
+    Community:
+      type: object
+      required: [id, name, memberCount, icon, color]
+      properties:
+        id:          { type: integer }
+        name:        { type: string }
+        memberCount: { type: integer }
+        icon:        { type: string }
+        color:       { type: string }
+
+    # -- Internship ------------------------------------------------------------
+    Internship:
+      type: object
+      required: [id, title, company, location, salary, status, createdAt]
+      properties:
+        id:        { type: integer }
+        title:     { type: string }
+        company:   { type: string }
+        location:  { type: string }
+        salary:    { type: string }
+        status:    { type: string, enum: [open, closed] }
+        logoUrl:   { type: ["string", "null"] }
+        isNew:     { type: boolean }
+        createdAt: { type: string }
+
+    InternshipInput:
+      type: object
+      required: [title, company, location, salary]
+      properties:
+        title:    { type: string }
+        company:  { type: string }
+        location: { type: string }
+        salary:   { type: string }
+        logoUrl:  { type: string }
+
+    # -- Event -----------------------------------------------------------------
+    Event:
+      type: object
+      required: [id, title, date, time, venue, organizer, createdAt]
+      properties:
+        id:        { type: integer }
+        title:     { type: string }
+        date:      { type: string }
+        time:      { type: string }
+        venue:     { type: string }
+        organizer: { type: string }
+        status:    { type: string, enum: [upcoming, approved, pending, cancelled] }
+        createdAt: { type: string }
+
+    EventInput:
+      type: object
+      required: [title, date, time, venue, organizer]
+      properties:
+        title:     { type: string }
+        date:      { type: string }
+        time:      { type: string }
+        venue:     { type: string }
+        organizer: { type: string }
+
+    # -- Match -----------------------------------------------------------------
+    MatchProfile:
+      type: object
+      required: [id, userId, name, department, year, matchType, interests, compatibilityScore, createdAt]
+      properties:
+        id:                 { type: integer }
+        userId:             { type: integer }
+        name:               { type: string }
+        avatarUrl:          { type: ["string", "null"] }
+        department:         { type: string }
+        year:               { type: integer }
+        matchType:          { type: string, enum: [dating, friend, study, project, cofounder] }
+        interests:          { type: array, items: { type: string } }
+        skills:             { type: array, items: { type: string } }
+        lookingFor:         { type: ["string", "null"] }
+        compatibilityScore: { type: integer }
+        createdAt:          { type: string }
+
+    MatchProfileInput:
+      type: object
+      required: [userId, name, department, year, matchType, interests]
+      properties:
+        userId:     { type: integer }
+        name:       { type: string }
+        department: { type: string }
+        year:       { type: integer }
+        matchType:  { type: string }
+        interests:  { type: array, items: { type: string } }
+        skills:     { type: array, items: { type: string } }
+        lookingFor: { type: string }
+
+    MeetupRequest:
+      type: object
+      required: [id, fromName, fromDept, message, status, location, createdAt]
+      properties:
+        id:        { type: integer }
+        fromName:  { type: string }
+        fromAvatar:{ type: ["string", "null"] }
+        fromDept:  { type: string }
+        message:   { type: string }
+        status:    { type: string, enum: [pending, accepted, declined] }
+        location:  { type: string }
+        createdAt: { type: string }
+
+    MeetupRequestInput:
+      type: object
+      required: [fromName, fromDept, message, location]
+      properties:
+        fromName:  { type: string }
+        fromDept:  { type: string }
+        message:   { type: string }
+        location:  { type: string }
+
+    MeetupResponse:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [accept, decline] }
