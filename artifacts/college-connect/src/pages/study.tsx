@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Download, Star, Eye, Clock, Zap, FileText,
   CheckCircle2, TrendingUp, Users, Briefcase, Upload,
-  FilePlus, AlertCircle, X, ChevronRight, Search,
+  FilePlus, AlertCircle, X, ChevronRight, Search, ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -320,11 +320,131 @@ function MySubmissions() {
   );
 }
 
+/* ─── Moderator quick-review panel (inline in Study Hub) ─── */
+function ModReviewPanel() {
+  const { submissions, approveSubmission, rejectSubmission, pendingCount } = useSubmissions();
+  const { user } = useAuth();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [action, setAction] = useState<"approve" | "reject" | null>(null);
+  const [note, setNote] = useState("");
+  const [done, setDone] = useState<string | null>(null);
+
+  const pending = submissions.filter(s => s.status === "pending");
+
+  const confirm = () => {
+    if (!selected || !action) return;
+    if (action === "approve") approveSubmission(selected, note, user?.name ?? "Moderator");
+    else rejectSubmission(selected, note, user?.name ?? "Moderator");
+    setDone(action === "approve" ? "Material approved and published!" : "Material rejected.");
+    setSelected(null); setAction(null); setNote("");
+    setTimeout(() => setDone(null), 3000);
+  };
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      {/* Toast */}
+      <AnimatePresence>
+        {done && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="bg-emerald-600 text-white text-sm font-semibold px-4 py-3 rounded-xl flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4" /> {done}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-amber-600" />
+        <p className="text-sm font-semibold text-slate-700">
+          {pendingCount === 0 ? "No pending submissions." : `${pendingCount} submission${pendingCount > 1 ? "s" : ""} awaiting your review`}
+        </p>
+      </div>
+
+      {pending.length === 0 ? (
+        <div className="text-center py-16">
+          <CheckCircle2 className="h-10 w-10 text-emerald-300 mx-auto mb-3" />
+          <p className="text-slate-400 text-sm">All caught up! No pending submissions.</p>
+        </div>
+      ) : (
+        pending.map(sub => {
+          const isOpen = selected === sub.id;
+          return (
+            <motion.div key={sub.id} layout className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-blue-50 rounded-xl flex-shrink-0">
+                    <FileText className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 text-sm">{sub.title}</p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-medium">{sub.course}</span>
+                      <span className="text-xs px-2 py-0.5 bg-blue-50 rounded text-blue-700 font-medium">{sub.type}</span>
+                      <span className="text-xs text-slate-400">{sub.semester}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">by <strong>{sub.uploadedBy}</strong> · {sub.submittedAt}</p>
+                    {sub.description && (
+                      <p className="text-xs text-slate-500 mt-2 bg-slate-50 p-2 rounded-lg border border-slate-100 line-clamp-2">{sub.description}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick action buttons */}
+                {!isOpen && (
+                  <div className="flex gap-2 mt-3 pl-11">
+                    <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs font-bold"
+                      onClick={() => { setSelected(sub.id); setAction("approve"); }}>
+                      ✓ Approve
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50 h-8 text-xs font-bold"
+                      onClick={() => { setSelected(sub.id); setAction("reject"); }}>
+                      ✗ Reject
+                    </Button>
+                  </div>
+                )}
+
+                {/* Expanded confirm area */}
+                <AnimatePresence>
+                  {isOpen && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                      className="mt-3 pl-11 overflow-hidden">
+                      <div className={`rounded-xl p-3 border mb-2 ${action === "approve" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+                        <p className="text-xs font-semibold mb-2 text-slate-700">
+                          {action === "approve" ? "Note for contributor (optional)" : "Reason for rejection *"}
+                        </p>
+                        <textarea value={note} onChange={e => setNote(e.target.value)}
+                          placeholder={action === "approve" ? "Great notes, well structured!" : "e.g. Duplicate content or low quality scan"}
+                          rows={2}
+                          className="w-full rounded-lg border border-input bg-white px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setSelected(null); setAction(null); setNote(""); }}>Cancel</Button>
+                        <Button size="sm"
+                          className={`flex-1 h-8 text-xs font-bold text-white ${action === "approve" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-red-600 hover:bg-red-700"}`}
+                          disabled={action === "reject" && !note.trim()}
+                          onClick={confirm}>
+                          Confirm {action === "approve" ? "Approval" : "Rejection"}
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 /* ─── Page ───────────────────────────────────────────────── */
 export default function Study() {
   const { submissions } = useSubmissions();
+  const { user } = useAuth();
+  const isMod = user?.role === "low_admin" || user?.role === "admin";
   const [mode, setMode] = useState<"student" | "contributor">("student");
-  const [contribTab, setContribTab] = useState<"upload" | "mine">("upload");
+  const [contribTab, setContribTab] = useState<"upload" | "mine" | "review">("upload");
 
   // Merge approved submitted materials into the public list
   const approvedFromContrib = submissions
@@ -579,7 +699,7 @@ export default function Study() {
             </div>
 
             {/* Sub-tabs */}
-            <Tabs value={contribTab} onValueChange={(v) => setContribTab(v as "upload" | "mine")}>
+            <Tabs value={contribTab} onValueChange={(v) => setContribTab(v as "upload" | "mine" | "review")}>
               <TabsList className="bg-white border border-slate-200 p-1 rounded-xl mb-6">
                 <TabsTrigger value="upload" className="rounded-lg data-[state=active]:bg-emerald-600 data-[state=active]:text-white">
                   <Upload className="h-3.5 w-3.5 mr-1.5" /> Upload New Material
@@ -587,6 +707,16 @@ export default function Study() {
                 <TabsTrigger value="mine" className="rounded-lg data-[state=active]:bg-slate-900 data-[state=active]:text-white">
                   <FileText className="h-3.5 w-3.5 mr-1.5" /> My Submissions
                 </TabsTrigger>
+                {isMod && (
+                  <TabsTrigger value="review" className="rounded-lg data-[state=active]:bg-amber-600 data-[state=active]:text-white">
+                    <ShieldCheck className="h-3.5 w-3.5 mr-1.5" /> Review Queue
+                    {submissions.filter(s => s.status === "pending").length > 0 && (
+                      <span className="ml-1.5 bg-amber-500 data-[state=active]:bg-white/30 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                        {submissions.filter(s => s.status === "pending").length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               <TabsContent value="upload">
@@ -596,6 +726,12 @@ export default function Study() {
               <TabsContent value="mine">
                 <MySubmissions />
               </TabsContent>
+
+              {isMod && (
+                <TabsContent value="review">
+                  <ModReviewPanel />
+                </TabsContent>
+              )}
             </Tabs>
           </motion.div>
         )}
