@@ -18,6 +18,7 @@ import Clubs from "@/pages/clubs";
 import Profile from "@/pages/profile";
 import Admin from "@/pages/admin";
 import Moderator from "@/pages/moderator";
+import Match from "@/pages/match";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,9 @@ function Router() {
       </Route>
       <Route path="/moderator">
         <SidebarLayout><Moderator /></SidebarLayout>
+      </Route>
+      <Route path="/match">
+        <SidebarLayout><Match /></SidebarLayout>
       </Route>
 
       <Route component={NotFound} />

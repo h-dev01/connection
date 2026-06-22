@@ -5,18 +5,19 @@
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, BookOpen, ShoppingBag, Users,
-  Briefcase, Tent, User, Settings, ShieldCheck, Bell,
+  Briefcase, Tent, User, Settings, ShieldCheck, Bell, Heart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
-  { label: "Dashboard",   href: "/dashboard",  icon: LayoutDashboard },
-  { label: "Study Hub",   href: "/study",       icon: BookOpen },
-  { label: "Marketplace", href: "/marketplace", icon: ShoppingBag },
-  { label: "Community",   href: "/community",   icon: Users },
-  { label: "Career",      href: "/career",      icon: Briefcase },
-  { label: "Clubs",       href: "/clubs",       icon: Tent },
-  { label: "Profile",     href: "/profile",     icon: User },
+  { label: "Dashboard",    href: "/dashboard",  icon: LayoutDashboard },
+  { label: "Study Hub",    href: "/study",       icon: BookOpen },
+  { label: "Marketplace",  href: "/marketplace", icon: ShoppingBag },
+  { label: "Community",    href: "/community",   icon: Users },
+  { label: "Campus Match", href: "/match",       icon: Heart, badge: "New" },
+  { label: "Career",       href: "/career",      icon: Briefcase },
+  { label: "Clubs",        href: "/clubs",       icon: Tent },
+  { label: "Profile",      href: "/profile",     icon: User },
 ];
 
 const ADMIN_ITEMS = [
@@ -58,8 +59,13 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
                     ? "bg-sidebar-accent text-white"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent/40 hover:text-white"
                 )}>
-                  <item.icon className={cn("h-4 w-4 flex-shrink-0", isActive && "text-blue-400")} />
+                  <item.icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-blue-400" : item.href === "/match" ? "text-rose-400" : "")} />
                   <span className="font-medium text-sm">{item.label}</span>
+                  {item.badge && !isActive && (
+                    <span className="ml-auto text-[10px] bg-rose-500 text-white rounded-full px-1.5 py-0.5 font-bold leading-none">
+                      {item.badge}
+                    </span>
+                  )}
                   {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400" />}
                 </div>
               </Link>
