@@ -186,61 +186,173 @@ function ProjectModal({ initial, onSave, onClose }: { initial?: Project; onSave:
   );
 }
 
+/* ── Suggested interests by category ─────────────────────── */
+const INTEREST_SUGGESTIONS: { category: string; emoji: string; items: string[] }[] = [
+  { category: "Tech & Coding", emoji: "💻", items: ["Machine Learning", "Web Development", "App Development", "UI/UX Design", "Cybersecurity", "Blockchain", "Data Science", "Open Source", "Game Dev", "DevOps"] },
+  { category: "Science & Research", emoji: "🔬", items: ["Physics", "Chemistry", "Biology", "Astronomy", "Robotics", "Electronics", "Nanotechnology", "Environmental Science"] },
+  { category: "Business & Career", emoji: "📈", items: ["Product Management", "Entrepreneurship", "Finance", "Marketing", "Consulting", "Stock Market", "Startups", "Leadership"] },
+  { category: "Arts & Creative", emoji: "🎨", items: ["Photography", "Video Editing", "Graphic Design", "Music", "Guitar", "Singing", "Dance", "Writing", "Poetry", "Film Making"] },
+  { category: "Sports & Fitness", emoji: "⚽", items: ["Cricket", "Football", "Basketball", "Badminton", "Chess", "Swimming", "Running", "Gym", "Yoga", "Table Tennis"] },
+  { category: "Social & Community", emoji: "🌍", items: ["NSS", "NCC", "Volunteering", "Social Impact", "Content Creation", "Debate", "Public Speaking", "Teaching"] },
+];
+
+/* ── Interests edit modal ─────────────────────────────────── */
+function InterestsEditModal({ tags, onSave, onClose }: { tags: string[]; onSave: (t: string[]) => void; onClose: () => void }) {
+  const [draft, setDraft] = useState<string[]>([...tags]);
+  const [input, setInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const toggle = (item: string) =>
+    setDraft(prev => prev.includes(item) ? prev.filter(t => t !== item) : [...prev, item]);
+
+  const addCustom = () => {
+    const t = input.trim();
+    if (t && !draft.includes(t)) setDraft(prev => [...prev, t]);
+    setInput("");
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16 }}
+        transition={{ type: "spring", stiffness: 300, damping: 25 }}
+        className="relative w-full max-w-xl mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-7 py-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900">Edit Interests & Skills</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Pick from suggestions or type your own</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
+        </div>
+
+        {/* Current tags */}
+        <div className="px-7 pt-4 pb-3 border-b border-slate-50">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2.5">Your interests ({draft.length})</p>
+          <div className="flex flex-wrap gap-2 min-h-[36px]">
+            <AnimatePresence>
+              {draft.length === 0 && (
+                <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-xs text-slate-400 italic py-1">
+                  None yet — pick from below or add your own
+                </motion.p>
+              )}
+              {draft.map(tag => (
+                <motion.div key={tag}
+                  initial={{ opacity: 0, scale: 0.75 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.75 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                  className="flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 rounded-full px-3 py-1">
+                  <span className="text-xs font-semibold">{tag}</span>
+                  <button onClick={() => toggle(tag)} className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors"><X className="h-3 w-3" /></button>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+
+          {/* Custom input */}
+          <div className="flex gap-2 mt-3">
+            <div className="relative flex-1">
+              <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input ref={inputRef} value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") addCustom(); }}
+                placeholder="Type anything — Cricket, Guitar, Startups…"
+                className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+            <Button size="sm" className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={addCustom} disabled={!input.trim()}>
+              Add
+            </Button>
+          </div>
+        </div>
+
+        {/* Suggestions */}
+        <div className="overflow-y-auto flex-1 px-7 py-4 space-y-5">
+          {INTEREST_SUGGESTIONS.map(({ category, emoji, items }) => (
+            <div key={category}>
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2.5">
+                {emoji} {category}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {items.map(item => {
+                  const active = draft.includes(item);
+                  return (
+                    <button key={item} onClick={() => toggle(item)}
+                      className={cn(
+                        "text-xs font-semibold rounded-full px-3 py-1.5 border transition-all",
+                        active
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                      )}>
+                      {active && <span className="mr-1">✓</span>}{item}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="px-7 py-5 border-t border-slate-100 flex items-center justify-between gap-3">
+          <p className="text-xs text-slate-400">{draft.length} interest{draft.length !== 1 ? "s" : ""} selected</p>
+          <div className="flex gap-3">
+            <Button variant="outline" className="px-5 h-11" onClick={onClose}>Cancel</Button>
+            <Button className="px-6 h-11 font-bold bg-blue-600 hover:bg-blue-700"
+              onClick={() => { onSave(draft); onClose(); }}>
+              <span className="flex items-center gap-2"><Save className="h-4 w-4" /> Save Interests</span>
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 /* ── Interests & Skills section ───────────────────────────── */
 function InterestsSection({ storageKey }: { storageKey: string }) {
   const [tags, setTags] = useState<string[]>(() => loadLocal(storageKey, DEFAULT_INTERESTS));
-  const [input, setInput] = useState("");
-  const [adding, setAdding] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => { saveLocal(storageKey, tags); }, [tags, storageKey]);
-  useEffect(() => { if (adding) inputRef.current?.focus(); }, [adding]);
-
-  const addTag = () => {
-    const t = input.trim();
-    if (t && !tags.includes(t)) setTags(prev => [...prev, t]);
-    setInput(""); setAdding(false);
-  };
-  const removeTag = (tag: string) => setTags(prev => prev.filter(t => t !== tag));
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {tags.map(tag => (
-        <motion.div key={tag} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.8 }}
-          className="group flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-full px-3 py-1">
-          <span className="text-xs font-semibold text-slate-700">{tag}</span>
-          <button onClick={() => removeTag(tag)} className="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5 text-slate-400 hover:text-red-500">
-            <X className="h-3 w-3" />
-          </button>
-        </motion.div>
-      ))}
-
+    <>
       <AnimatePresence>
-        {adding ? (
-          <motion.div key="input" initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }}
-            className="flex items-center gap-1">
-            <input ref={inputRef} value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") addTag(); if (e.key === "Escape") { setAdding(false); setInput(""); } }}
-              placeholder="e.g. Cricket, Guitar, ML…"
-              className="h-7 text-xs rounded-full border border-blue-400 bg-blue-50 px-3 py-1 outline-none w-36 focus:ring-1 focus:ring-blue-400"
-            />
-            <button onClick={addTag} className="h-7 w-7 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700">
-              <Plus className="h-3 w-3" />
-            </button>
-            <button onClick={() => { setAdding(false); setInput(""); }} className="h-7 w-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200">
-              <X className="h-3 w-3" />
-            </button>
-          </motion.div>
-        ) : (
-          <motion.button key="add-btn" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-1 bg-white border border-dashed border-slate-300 text-slate-500 font-semibold rounded-full px-3 py-1 text-xs hover:bg-slate-50 hover:border-blue-400 hover:text-blue-600 transition-colors">
-            <Plus className="h-3 w-3" /> Add Interest
-          </motion.button>
+        {editOpen && (
+          <InterestsEditModal
+            key="interests-modal"
+            tags={tags}
+            onSave={setTags}
+            onClose={() => setEditOpen(false)}
+          />
         )}
       </AnimatePresence>
-    </div>
+
+      <div className="flex flex-wrap gap-2">
+        {tags.map(tag => (
+          <motion.div key={tag} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
+            className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-full px-3 py-1">
+            <span className="text-xs font-semibold text-slate-700">{tag}</span>
+          </motion.div>
+        ))}
+        {tags.length === 0 && (
+          <p className="text-xs text-slate-400 italic py-1">No interests added yet</p>
+        )}
+      </div>
+
+      <button onClick={() => setEditOpen(true)}
+        className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors group">
+        <div className="w-6 h-6 rounded-full bg-blue-50 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
+          <Pencil className="h-3 w-3" />
+        </div>
+        Edit interests & skills
+      </button>
+    </>
   );
 }
 
