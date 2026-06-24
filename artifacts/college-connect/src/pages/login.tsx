@@ -135,7 +135,7 @@ export default function Login() {
     setOtpLoading(false);
     if (res.ok && res.otp) {
       setDemoOtp(res.otp);
-      setOtp("");
+      setOtp(res.otp);   // auto-fill the boxes
       setFlow("student-otp");
     } else {
       setOtpError(res.error ?? "Failed to send OTP.");
@@ -435,10 +435,9 @@ export default function Login() {
                     <button type="button"
                       className="text-blue-600 font-semibold hover:underline flex items-center gap-1"
                       onClick={async () => {
-                        setOtp("");
                         setOtpError("");
                         const res = await signupWithEmail(email);
-                        if (res.ok && res.otp) setDemoOtp(res.otp);
+                        if (res.ok && res.otp) { setDemoOtp(res.otp); setOtp(res.otp); }
                       }}>
                       <RefreshCw className="h-3 w-3" /> Resend OTP
                     </button>
