@@ -8,11 +8,7 @@ PORT=8080 pnpm --filter @workspace/api-server run dev &
 API_PID=$!
 
 # Start frontend (port 5000 for Replit webview)
-PORT=5000 BASE_PATH=/ pnpm --filter @workspace/college-connect run dev &
-FRONTEND_PID=$!
+PORT=5000 BASE_PATH=/ pnpm --filter @workspace/college-connect run dev
 
-# Wait for either process to exit
-wait -n $API_PID $FRONTEND_PID
-
-# If one exits, kill the other
-kill $API_PID $FRONTEND_PID 2>/dev/null
+# If frontend exits, kill API server
+kill $API_PID 2>/dev/null

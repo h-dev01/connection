@@ -42,7 +42,6 @@ const FLAIRS = Object.keys(FLAIR_CFG) as Flair[];
 
 /* ─── Stories / Status strips ───────────────────────────── */
 const STORIES = [
-  { name: "Your Story", src: null,  ring: "ring-dashed ring-slate-300", add: true },
   { name: "Julian C.", src: "https://i.pravatar.cc/150?u=a042581f4e29026702d", ring: "ring-blue-500" },
   { name: "Sneha J.",  src: "https://i.pravatar.cc/150?u=a042581f4e29026701d", ring: "ring-pink-500" },
   { name: "Arjun R.",  src: "https://i.pravatar.cc/150?u=a042581f4e29026705d", ring: "ring-emerald-500" },
@@ -555,13 +554,7 @@ export default function Community() {
               {STORIES.map(s => (
                 <div key={s.name} className="flex flex-col items-center gap-1.5 flex-none cursor-pointer group">
                   <div className={cn("h-14 w-14 rounded-full ring-2 ring-offset-2 transition-transform group-hover:scale-105", s.ring)}>
-                    {s.add ? (
-                      <div className="h-full w-full rounded-full bg-slate-100 flex items-center justify-center">
-                        <Plus className="h-5 w-5 text-slate-500" />
-                      </div>
-                    ) : (
-                      <img src={s.src!} className="h-full w-full rounded-full object-cover" />
-                    )}
+                    <img src={s.src!} className="h-full w-full rounded-full object-cover" />
                   </div>
                   <span className="text-[10px] font-semibold text-slate-600 text-center w-14 truncate">{s.name}</span>
                 </div>
