@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth, type UserRole } from "@/contexts/AuthContext";
-import { homeRouteForRole } from "@/lib/auth-utils";
+import { homeRouteForRole } from "@/features/auth/auth-utils";
 
 /* ─── Staff role definitions (admin / mod) ───────────────── */
 const STAFF_ROLES: {

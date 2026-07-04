@@ -1,8 +1,8 @@
 # AIread — Full Codebase Guide for CollegeConnect
 
-This file exists so an AI (or a new developer) can read ONE document and understand
-what every file in this repo does, what website feature it powers, and which other
-files it is connected to. Read this before making changes.
+This file exists so an AI (or a new developer) can read ONE document and instantly
+know **which folder/file to open for a given feature**, on both frontend and backend.
+Folders and files are now named after the website feature they implement.
 
 ---
 
@@ -19,7 +19,7 @@ reputation/profile system, and admin/moderator tooling.
 - Validation: Zod, generated from an OpenAPI spec
 - API client: TanStack Query hooks generated via Orval
 
-**Monorepo layout:**
+**Top-level monorepo layout:**
 ```
 artifacts/college-connect/   → the main website (frontend)
 artifacts/api-server/        → the backend REST API
@@ -31,130 +31,195 @@ lib/api-client-react/        → TanStack Query hooks generated from the OpenAPI
 scripts/                     → misc workspace utility scripts
 ```
 
-Data flow in one sentence: **Frontend page → generated React Query hook (lib/api-client-react) → HTTP request proxied by Vite to `/api` → Express route (artifacts/api-server) → Zod validation (lib/api-zod) → Drizzle ORM query (lib/db) → PostgreSQL.**
+Data flow in one sentence: **Frontend feature page → generated React Query hook (lib/api-client-react) → HTTP request proxied by Vite to `/api` → Express route (artifacts/api-server) → Zod validation (lib/api-zod) → Drizzle ORM query (lib/db) → PostgreSQL.**
 
 ---
 
-## 2. Backend — `artifacts/api-server/src`
+## 2. ⭐ Feature Map — find any feature in 2 seconds
 
-| File | What it does | Feature it powers | Related files |
+Every row below is one website feature. It tells you exactly which frontend folder,
+which backend route file, and which database table power it.
+
+| Feature | Frontend folder | Backend route file | DB table(s) |
 |---|---|---|---|
-| `index.ts` | Entry point. Starts the HTTP server, reads `PORT` from env, calls `app.ts`'s Express app to listen. | Whole API (boot) | `app.ts` |
-| `app.ts` | Builds the Express app: JSON body parsing, CORS, `pino-http` request logging, mounts all routes under `/api`. | Whole API (setup) | `routes/index.ts`, `lib/logger.ts` |
-| `lib/logger.ts` | Configures the `pino` logger instance used for structured request/error logging. | Observability/debugging | `app.ts` |
-| `routes/index.ts` | Combines every feature router (health, users, posts, study, marketplace, clubs, stats) into one router mounted in `app.ts`. | Routing glue | all files in `routes/` |
-| `routes/health.ts` | `GET /api/healthz` — simple liveness check. | Infra/monitoring | none |
-| `routes/users.ts` | `GET /users`, `GET /users/:id`, `PATCH /users/:id` — student profile data (name, college, department, CGPA, attendance, reputation). | **Profile page**, **Dashboard** stats, **Community leaderboard** | `lib/db/src/schema/users.ts` |
-| `routes/posts.ts` | `GET /posts`, `POST /posts` (supports anonymous posts), `PATCH /posts/:id/like`, plus Q&A endpoints. | **Community page** (campus feed + anonymous Q&A) | `lib/db/src/schema/posts.ts` |
-| `routes/study.ts` | `GET /study/materials`, `POST /study/materials` (upload), `PATCH /study/materials/:id/download` (download counter). | **Study Hub page** | `lib/db/src/schema/study.ts` |
-| `routes/marketplace.ts` | `GET /marketplace/listings`, `POST /marketplace/listings`, `DELETE /marketplace/listings/:id` — buy/sell, housing, and services listings. | **Marketplace page** | `lib/db/src/schema/marketplace.ts` |
-| `routes/clubs.ts` | Fetch/join clubs, list campus communities/events, list internships. | **Clubs page**, **Career page** (internships), **Community** (events) | `lib/db/src/schema/clubs.ts` |
-| `routes/stats.ts` | Aggregated stats: student summary (CGPA/attendance) for Dashboard, global usage/reports/verification counts for Admin. | **Dashboard page**, **Admin page** | `lib/db/src/schema/*` |
+| Landing / marketing page | `artifacts/college-connect/src/features/home/` | — | — |
+| Login (student OTP + admin/mod password) | `artifacts/college-connect/src/features/auth/` | `users.ts` (lookup) | `users` |
+| Dashboard (CGPA, attendance, exam countdown) | `artifacts/college-connect/src/features/dashboard/` | `stats.ts` | `users`, `study_materials`, `listings` |
+| Study Hub (notes, uploads, AI tools) | `artifacts/college-connect/src/features/study/` | `study.ts` | `study_materials` |
+| Marketplace (buy/sell, housing, services) | `artifacts/college-connect/src/features/marketplace/` | `marketplace.ts` | `listings` |
+| Community (feed, anonymous Q&A, leaderboard) | `artifacts/college-connect/src/features/community/` | `community.ts` | `posts`, `qa_questions` |
+| Career (internships, resume, interview prep) | `artifacts/college-connect/src/features/career/` | `clubs.ts` (internships) | `internships` |
+| Clubs (organizations, events, join/start) | `artifacts/college-connect/src/features/clubs/` | `clubs.ts` | `clubs`, `communities`, `events` |
+| Profile (reputation, academics, showcase) | `artifacts/college-connect/src/features/profile/` | `users.ts` | `users` |
+| Match ("Campus Match" peer/roommate finder) | `artifacts/college-connect/src/features/match/` | — (mock data only so far) | — |
+| Admin (analytics, alerts, moderation queue) | `artifacts/college-connect/src/features/admin/` | `stats.ts` | all tables (aggregated) |
+| Moderator (reports, verification, campus stats) | `artifacts/college-connect/src/features/moderator/` | `stats.ts` | all tables (aggregated) |
+| 404 / not-found | `artifacts/college-connect/src/features/misc/` | — | — |
 
-Backend routes validate incoming request bodies with Zod schemas from `lib/api-zod` before touching the database.
+> Rule of thumb: **frontend folder name = feature name = (usually) backend route file name.**
+> The three exceptions are noted above: Career/Clubs share `clubs.ts`, Profile/Dashboard read from `users.ts`/`stats.ts`, and Admin/Moderator both read aggregate data from `stats.ts` (because those pages show overlapping cross-feature stats, not their own dedicated data).
 
 ---
 
-## 3. Database — `lib/db/src`
+## 3. Frontend — `artifacts/college-connect/src`
+
+### Folder structure (feature-first)
+```
+src/
+  features/
+    home/          → HomePage.tsx              (landing page)
+    auth/          → LoginPage.tsx, auth-utils.ts   (login + role-redirect helper)
+    dashboard/     → DashboardPage.tsx
+    study/         → StudyPage.tsx
+    marketplace/   → MarketplacePage.tsx
+    community/     → CommunityPage.tsx
+    career/        → CareerPage.tsx
+    clubs/         → ClubsPage.tsx
+    profile/       → ProfilePage.tsx
+    admin/         → AdminPage.tsx
+    moderator/     → ModeratorPage.tsx
+    match/         → MatchPage.tsx
+    misc/          → NotFoundPage.tsx           (404 fallback, not a real feature)
+  components/
+    layout/        → SidebarLayout.tsx          (shared shell used by every feature page)
+    shared/         → ContentActions.tsx, ProfileCompleteModal.tsx (cross-feature UI)
+    ui/            → shadcn/ui primitives (button, dialog, table, etc.) — generic, not feature-specific
+  contexts/         → AuthContext.tsx, SubmissionsContext.tsx (cross-feature app state)
+  hooks/            → use-mobile.tsx, use-toast.ts (generic utilities)
+  lib/              → utils.ts (generic helpers, e.g. `cn()`)
+  App.tsx           → wouter routes; imports every feature's page component and wires up `/dashboard`, `/study`, etc.
+  main.tsx          → React root
+```
+
+**Why this layout:** each feature now lives in its own folder, so to work on
+Marketplace you only ever need to open `features/marketplace/`. Code that's
+genuinely shared across features (auth session state, the sidebar shell,
+moderation dialogs, generic UI kit) stays outside `features/` in
+`contexts/`, `components/`, `hooks/`, `lib/` — if it moved into one feature
+folder it would create a fake dependency between unrelated features.
+
+### Feature folders in detail
+| Folder | Main file | What it does |
+|---|---|---|
+| `features/home/` | `HomePage.tsx` | Public marketing landing page for logged-out visitors. |
+| `features/auth/` | `LoginPage.tsx` | Multi-role login: student email+OTP flow, admin/moderator email+password flow. |
+| `features/auth/` | `auth-utils.ts` | `homeRouteForRole()` — decides which page to redirect to after login based on role. |
+| `features/dashboard/` | `DashboardPage.tsx` | Student home: CGPA, attendance, exam countdown, recent study materials, marketplace highlights, campus feed/polls. |
+| `features/study/` | `StudyPage.tsx` | Study Hub: filterable materials list, upload notes, AI Summarizer & Exam Prep UI, academic tools. |
+| `features/marketplace/` | `MarketplacePage.tsx` | Buy/sell items, housing (PG/hostel), local services, roommate finder. |
+| `features/community/` | `CommunityPage.tsx` | Campus feed, hobby communities, meetup requests, anonymous Q&A, reputation leaderboard. |
+| `features/career/` | `CareerPage.tsx` | Internship listings, resume builder, interview prep, startup co-founder finder. |
+| `features/clubs/` | `ClubsPage.tsx` | Trending clubs, all organizations, join/start-a-club flow, campus events. |
+| `features/profile/` | `ProfilePage.tsx` | Personal reputation hub, academic interests, project showcase, uploaded notes. |
+| `features/match/` | `MatchPage.tsx` | "Campus Match" — peer/roommate/interest matching. |
+| `features/admin/` | `AdminPage.tsx` | Global admin dashboard: user analytics, system alerts, moderation queue, marketplace stats. |
+| `features/moderator/` | `ModeratorPage.tsx` | Moderator workflow: reported content queue, student verification, campus stats. |
+| `features/misc/` | `NotFoundPage.tsx` | 404 fallback route. |
+
+Every feature page currently renders **realistic mock data** defined at the top
+of the file (see JSDoc comments) — swap these for real API calls via
+`lib/api-client-react` hooks as backend integration progresses.
+
+### Cross-feature (shared) code
+- **`contexts/AuthContext.tsx`** — logged-in user/session state, role-based login logic, OTP flow. Used by `features/auth/` and `components/layout/SidebarLayout.tsx` (to filter nav by role).
+- **`contexts/SubmissionsContext.tsx`** — shared state connecting `features/study/` (uploads) with `features/moderator/` (approve/reject queue).
+- **`components/layout/SidebarLayout.tsx`** — dark-navy sidebar wrapping every authenticated feature page; nav items filtered by role.
+- **`components/shared/ContentActions.tsx`** — report/delete/action-menu UI reused by `features/community/` and `features/marketplace/`.
+- **`components/shared/ProfileCompleteModal.tsx`** — forces new users to complete academic details; triggered globally from `App.tsx`.
+- **`components/ui/*`** — shadcn/ui building blocks, not tied to any one feature.
+
+### Build config
+- **`vite.config.ts`** — path alias `@/` → `src/`, dev server proxy forwarding `/api/*` to the backend on port 8080, `--host 0.0.0.0` for Replit's proxy.
+- **`components.json`** — shadcn/ui config.
+
+---
+
+## 4. Backend — `artifacts/api-server/src`
+
+### Folder structure
+```
+src/
+  index.ts        → server entry point, starts listening on $PORT
+  app.ts          → Express app setup (JSON parsing, CORS, pino-http logging, mounts /api)
+  lib/
+    logger.ts     → pino logger config
+  routes/         → one file per feature (mirrors the frontend features/ folders)
+    index.ts      → combines every feature router into one
+    health.ts     → infra/monitoring only
+    users.ts      → Profile + Dashboard + Community-leaderboard data
+    community.ts  → Community feature (feed posts + anonymous Q&A)  [renamed from posts.ts]
+    study.ts      → Study Hub feature
+    marketplace.ts→ Marketplace feature
+    clubs.ts      → Clubs + Career(internships) + Community(events)
+    stats.ts      → Dashboard + Admin + Moderator aggregate stats
+```
+
+### Route files in detail
+| File | Endpoints | Feature it powers |
+|---|---|---|
+| `routes/health.ts` | `GET /api/healthz` | Infra/monitoring |
+| `routes/users.ts` | `GET /users`, `GET /users/:id`, `PATCH /users/:id` | **Profile**, **Dashboard** stats, **Community leaderboard** |
+| `routes/community.ts` | `GET /posts`, `POST /posts`, `PATCH /posts/:id/like`, Q&A endpoints | **Community** (feed + anonymous Q&A) |
+| `routes/study.ts` | `GET /study/materials`, `POST /study/materials`, `PATCH /study/materials/:id/download` | **Study Hub** |
+| `routes/marketplace.ts` | `GET /marketplace/listings`, `POST /marketplace/listings`, `DELETE /marketplace/listings/:id` | **Marketplace** |
+| `routes/clubs.ts` | fetch/join clubs, list communities/events, list internships | **Clubs**, **Career** (internships), **Community** (events) |
+| `routes/stats.ts` | aggregate CGPA/attendance summary, global usage/reports/verification counts | **Dashboard**, **Admin**, **Moderator** |
+
+All routes validate request bodies with Zod schemas from `lib/api-zod` before touching the database.
+
+---
+
+## 5. Database — `lib/db/src`
 
 Drizzle ORM schema, PostgreSQL. `index.ts` exports the `db` client plus every table.
 
-| File | Table(s) | Key columns |
-|---|---|---|
-| `schema/users.ts` | `users` | `id`, `name`, `email`, `college`, `department`, `year`, `role` (student / low_admin / admin), `reputationScore`, `reputationLevel`, `cgpa`, `attendance` |
-| `schema/posts.ts` | `posts`, `qa_questions` | author info, `content`, `category`, `likes`, `anonymous` |
-| `schema/study.ts` | `study_materials` | `subject`, `course`, `semester`, `fileType`, `downloads`, `verified` |
-| `schema/marketplace.ts` | `listings` | `listingType` (item/housing/service), `price`, `sellerName`, `featured` |
-| `schema/clubs.ts` | `clubs`, `communities`, `events`, `internships` | `memberCount` (clubs), event dates, internship postings |
+| Schema file | Table(s) | Key columns | Feature |
+|---|---|---|---|
+| `schema/users.ts` | `users` | `id`, `name`, `email`, `college`, `department`, `year`, `role`, `reputationScore`, `reputationLevel`, `cgpa`, `attendance` | Profile, Dashboard, Auth |
+| `schema/posts.ts` | `posts`, `qa_questions` | author info, `content`, `category`, `likes`, `anonymous` | Community |
+| `schema/study.ts` | `study_materials` | `subject`, `course`, `semester`, `fileType`, `downloads`, `verified` | Study Hub |
+| `schema/marketplace.ts` | `listings` | `listingType`, `price`, `sellerName`, `featured` | Marketplace |
+| `schema/clubs.ts` | `clubs`, `communities`, `events`, `internships` | `memberCount`, event dates, internship postings | Clubs, Career, Community |
 
 `drizzle.config.ts` configures schema push (`pnpm --filter @workspace/db run push`) against `DATABASE_URL`.
 
 ---
 
-## 4. Shared API contract libs
+## 6. Shared API contract libs
 
 | Dir | Purpose |
 |---|---|
-| `lib/api-spec` | OpenAPI YAML — the single source of truth describing every endpoint, request/response shape. (Note: codegen from this spec is currently bypassed per `replit.md` due to a YAML parsing issue; routes use manual Zod validation instead.) |
-| `lib/api-zod` | Zod schemas generated from the spec (`src/generated/*`) — used by the **backend** to validate requests/responses. |
-| `lib/api-client-react` | TanStack Query hooks generated from the spec (`src/generated/api.ts`, `api.schemas.ts`) plus `custom-fetch.ts` (the fetch wrapper) — used by the **frontend** to call the API with type safety and caching. |
+| `lib/api-spec` | OpenAPI YAML — source of truth for every endpoint's shape. (Codegen from this spec is currently bypassed due to a YAML parsing issue; routes use manual Zod validation instead — see `replit.md`.) |
+| `lib/api-zod` | Zod schemas generated from the spec — used by the **backend** to validate requests/responses. |
+| `lib/api-client-react` | TanStack Query hooks generated from the spec, plus `custom-fetch.ts` — used by the **frontend** to call the API with type safety and caching. |
 
 ---
 
-## 5. Frontend — `artifacts/college-connect/src`
+## 7. Other folders
 
-### Entry & routing
-- **`main.tsx`** — React root, mounts `App.tsx`.
-- **`App.tsx`** — Sets up `QueryClientProvider` (TanStack Query), `AuthProvider`, `SubmissionsProvider`, and all `wouter` routes. Authenticated pages are wrapped in `SidebarLayout`; some routes have a `RoleGuard` restricting access by role (student / moderator / admin). The Login page is NOT wrapped in `SidebarLayout` (its own full-page layout).
-
-### Pages (`src/pages/`)
-| Page | Feature |
-|---|---|
-| `home.tsx` | Public landing page (marketing site) shown to logged-out visitors. |
-| `login.tsx` | Multi-role login: student flow (email + OTP), admin/moderator flow (email + password). |
-| `dashboard.tsx` | Student home after login: CGPA, attendance, upcoming exam countdown, recent study materials, marketplace highlights, campus feed/polls. |
-| `study.tsx` | Study Hub: browse/filter study materials, upload notes, AI Summarizer & Exam Prep tool UI, academic tools. |
-| `marketplace.tsx` | Buy/sell items, housing (PG/hostel), local services, roommate finder. |
-| `community.tsx` | Campus social feed, hobby communities, meetup requests, anonymous Q&A, reputation leaderboard. |
-| `career.tsx` | Internship listings, resume builder, interview prep, startup co-founder finder. |
-| `clubs.tsx` | Trending clubs, all organizations, join/start-a-club flow, campus events. |
-| `profile.tsx` | Personal reputation hub, academic interests, project showcase, uploaded notes. |
-| `match.tsx` | "Campus Match" — peer/roommate/interest matching feature. |
-| `admin.tsx` | Global admin dashboard: user analytics, system alerts, moderation queue, marketplace stats. |
-| `moderator.tsx` | Moderator workflow: reported content queue, student verification, campus stats. |
-| `not-found.tsx` | 404 fallback route. |
-
-Every page currently renders **realistic mock data** defined at the top of the file (see JSDoc comments) — these are meant to be swapped for real API calls via `lib/api-client-react` hooks as backend integration progresses (per `replit.md`).
-
-### Contexts (`src/contexts/`)
-- **`AuthContext.tsx`** — Manages the logged-in user/session state, role-based login logic, OTP verification flow for students. Consumed via a hook throughout the app to know who's logged in and their role.
-- **`SubmissionsContext.tsx`** — Shared state for the study-material upload → moderation-approval pipeline; connects the Study Hub (student uploads) with the Moderator page (approve/reject queue).
-
-### Shared components (`src/components/`)
-- **`layout/SidebarLayout.tsx`** — The dark-navy sidebar shell wrapping all authenticated pages; nav items are filtered based on the current user's role (student/moderator/admin).
-- **`shared/ContentActions.tsx`** — Reusable moderation UI (report dialog, delete confirmation, action menu) used on posts/listings across Community and Marketplace.
-- **`shared/ProfileCompleteModal.tsx`** — Modal forcing new users to fill in academic details (college, department, year) after first login.
-- **`ui/*`** — shadcn/ui primitive components (button, dialog, table, sidebar, etc.) — generic building blocks, not feature-specific.
-
-### Hooks & libs (`src/hooks`, `src/lib`)
-- **`hooks/use-mobile.tsx`** — Detects mobile viewport for responsive behavior.
-- **`hooks/use-toast.ts`** — Toast notification state/hook (used with `ui/toaster.tsx`).
-- **`lib/utils.ts`** — Generic helpers (e.g. `cn()` for className merging).
-- **`lib/auth-utils.ts`** — Helper that decides which page a user should land on based on their role after login.
-
-### Build config
-- **`vite.config.ts`** — Vite dev/build config: path alias `@/` → `src/`, dev server proxy forwarding `/api/*` requests to the backend on port 8080, `--host 0.0.0.0` for Replit's proxy.
-- **`components.json`** — shadcn/ui config (component style, aliases).
-
----
-
-## 6. `artifacts/mockup-sandbox`
-
-A separate, isolated Vite app used only for the Canvas design/preview tool (component prototyping in isolation). It mirrors some `ui/` components but is **not part of the deployed website** — safe to ignore when reasoning about live site behavior.
-
----
-
-## 7. `scripts/`
-
-- **`scripts/src/hello.ts`** — trivial placeholder/utility script for verifying the workspace tooling works. Not part of the app.
+- **`artifacts/mockup-sandbox/`** — isolated Vite app for the Canvas design/preview tool. Not part of the deployed website; safe to ignore for live-site behavior.
+- **`scripts/src/hello.ts`** — placeholder utility script for verifying workspace tooling. Not part of the app.
 
 ---
 
 ## 8. How a feature request typically touches files
 
-Example — "let students comment on posts":
+Example — "let students comment on posts" (a Community feature change):
 1. `lib/api-spec` — add the endpoint to the OpenAPI YAML (if codegen is fixed) or skip if using manual Zod.
-2. `lib/api-zod/src/generated` — add/update Zod schema for the comment payload.
-2. `artifacts/api-server/src/routes/posts.ts` — add `POST /posts/:id/comments` route, validate with Zod, write to DB.
-3. `lib/db/src/schema/posts.ts` — add a `comments` table if it doesn't exist.
-4. `lib/api-client-react/src/generated` — regenerate/add a React Query hook for the new endpoint.
-5. `artifacts/college-connect/src/pages/community.tsx` — call the new hook, render comment UI (replacing the current mock data).
+2. `lib/api-zod/src/generated` — add/update the Zod schema for the comment payload.
+3. `artifacts/api-server/src/routes/community.ts` — add `POST /posts/:id/comments`, validate with Zod, write to DB.
+4. `lib/db/src/schema/posts.ts` — add a `comments` table if it doesn't exist.
+5. `lib/api-client-react/src/generated` — regenerate/add a React Query hook for the new endpoint.
+6. `artifacts/college-connect/src/features/community/CommunityPage.tsx` — call the new hook, render comment UI (replacing the current mock data).
+
+**General rule:** find the feature in the table in Section 2, and every file you need to touch will be in that row's frontend folder + backend route file + DB table.
 
 ---
 
 ## 9. Known gotchas (see also `replit.md`)
 
-- Auth is not fully wired to the backend yet — Login currently just navigates to `/dashboard`/role home; `AuthContext` handles this client-side only.
+- Auth is not fully wired to the backend yet — Login currently just navigates to the role's home page; `AuthContext` handles this client-side only.
 - OpenAPI codegen (Orval) is bypassed due to a YAML parsing issue — routes use manual Zod validation for now.
 - Do not run `pnpm dev` at the workspace root — use the Replit workflow or `pnpm --filter <package> run dev`.
-- Most page-level data is mock data at the top of each page file — check JSDoc comments before assuming it's live from the API.
+- Most feature-page data is mock data at the top of each page file — check JSDoc comments before assuming it's live from the API.
+- Backend route file naming mostly mirrors frontend feature folder names, with 3 intentional exceptions (see the note under the Feature Map table).

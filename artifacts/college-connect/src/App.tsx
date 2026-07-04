@@ -2,25 +2,25 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
+import NotFound from "@/features/misc/NotFoundPage";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 import { AuthProvider, useAuth, type UserRole } from "@/contexts/AuthContext";
 import { SubmissionsProvider } from "@/contexts/SubmissionsContext";
 import { ProfileCompleteModal } from "@/components/shared/ProfileCompleteModal";
 
-// Pages
-import Home from "@/pages/home";
-import Login from "@/pages/login";
-import Dashboard from "@/pages/dashboard";
-import Study from "@/pages/study";
-import Marketplace from "@/pages/marketplace";
-import Community from "@/pages/community";
-import Career from "@/pages/career";
-import Clubs from "@/pages/clubs";
-import Profile from "@/pages/profile";
-import Admin from "@/pages/admin";
-import Moderator from "@/pages/moderator";
-import Match from "@/pages/match";
+// Feature pages — one folder per website feature (see AIread.md for the full map)
+import Home from "@/features/home/HomePage";
+import Login from "@/features/auth/LoginPage";
+import Dashboard from "@/features/dashboard/DashboardPage";
+import Study from "@/features/study/StudyPage";
+import Marketplace from "@/features/marketplace/MarketplacePage";
+import Community from "@/features/community/CommunityPage";
+import Career from "@/features/career/CareerPage";
+import Clubs from "@/features/clubs/ClubsPage";
+import Profile from "@/features/profile/ProfilePage";
+import Admin from "@/features/admin/AdminPage";
+import Moderator from "@/features/moderator/ModeratorPage";
+import Match from "@/features/match/MatchPage";
 
 const queryClient = new QueryClient();
 
