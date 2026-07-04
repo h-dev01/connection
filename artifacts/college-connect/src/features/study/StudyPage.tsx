@@ -5,6 +5,7 @@
  *   - Contributor Mode → upload notes/PDFs → goes to pending approval queue
  */
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Download, Star, Eye, Clock, Zap, FileText,
@@ -21,13 +22,45 @@ import { cn } from "@/lib/utils";
 import { useSubmissions, type MaterialType } from "@/contexts/SubmissionsContext";
 import { useAuth } from "@/contexts/AuthContext";
 
-/* ─── static seed data (public approved materials) ────── */
-const APPROVED_MATERIALS = [
-  { id: "a1", title: "Data Structures & Algorithms — Complete Notes", course: "CS301", downloads: 1240, rating: 4.9, type: "pdf", color: "text-red-500 bg-red-50" },
-  { id: "a2", title: "Machine Learning Midterm Review", course: "CS405", downloads: 856, rating: 4.8, type: "ppt", color: "text-orange-500 bg-orange-50" },
-  { id: "a3", title: "Database Management Systems Lab Manual", course: "CS305", downloads: 642, rating: 4.6, type: "doc", color: "text-blue-500 bg-blue-50" },
-  { id: "a4", title: "Computer Networks Previous Year Papers", course: "CS302", downloads: 2105, rating: 4.9, type: "pdf", color: "text-red-500 bg-red-50" },
-];
+/* ─── live data types & helpers ─────────────────────────── */
+interface StudyMaterial {
+  id: number;
+  title: string;
+  subject: string;
+  course: string;
+  semester: string;
+  fileType: string;
+  fileSizeMb: number;
+  downloads: number;
+  rating: number;
+  ratingCount: number;
+  verified: boolean;
+  uploadedBy: string;
+  createdAt: string;
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  pdf: "text-red-500 bg-red-50",
+  ppt: "text-orange-500 bg-orange-50",
+  doc: "text-blue-500 bg-blue-50",
+  notes: "text-violet-500 bg-violet-50",
+  pyq: "text-emerald-500 bg-emerald-50",
+  assignment: "text-amber-500 bg-amber-50",
+  lab: "text-cyan-500 bg-cyan-50",
+  syllabus: "text-slate-500 bg-slate-100",
+};
+
+async function fetchMaterials(): Promise<StudyMaterial[]> {
+  const res = await fetch("/api/study/materials");
+  if (!res.ok) throw new Error("Failed to load study materials");
+  return res.json();
+}
+
+async function incrementDownload(id: number): Promise<StudyMaterial> {
+  const res = await fetch(`/api/study/materials/${id}/download`, { method: "PATCH" });
+  if (!res.ok) throw new Error("Failed to record download");
+  return res.json();
+}
 
 const INTERNSHIPS = [
   { id: "1", title: "Frontend Developer Intern", company: "TechCorp India", salary: "₹25k/mo", status: "NEW" },
@@ -445,8 +478,19 @@ export default function Study() {
   const isMod = user?.role === "low_admin" || user?.role === "admin";
   const [mode, setMode] = useState<"student" | "contributor">("student");
   const [contribTab, setContribTab] = useState<"upload" | "mine" | "review">("upload");
+  const queryClient = useQueryClient();
 
-  // Merge approved submitted materials into the public list
+  const { data: dbMaterials = [], isLoading: materialsLoading } = useQuery({
+    queryKey: ["study-materials"],
+    queryFn: fetchMaterials,
+  });
+
+  const downloadMutation = useMutation({
+    mutationFn: incrementDownload,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-materials"] }),
+  });
+
+  // Merge approved submitted materials (pending sync to DB) into the public list
   const approvedFromContrib = submissions
     .filter((s) => s.status === "approved")
     .map((s) => ({
@@ -458,7 +502,16 @@ export default function Study() {
       type: s.type,
       color: "text-blue-500 bg-blue-50",
     }));
-  const allMaterials = [...APPROVED_MATERIALS, ...approvedFromContrib];
+  const liveMaterials = dbMaterials.map((m) => ({
+    id: m.id,
+    title: m.title,
+    course: m.course,
+    downloads: m.downloads,
+    rating: m.rating,
+    type: m.fileType,
+    color: TYPE_COLORS[m.fileType] ?? "text-slate-500 bg-slate-100",
+  }));
+  const allMaterials = [...liveMaterials, ...approvedFromContrib];
 
   return (
     <div className="flex-1 p-8 bg-slate-50 min-h-screen pb-24">
@@ -574,7 +627,11 @@ export default function Study() {
                             <Button variant="ghost" size="icon" className="text-slate-500 hover:text-slate-900">
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="outline" size="icon" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                            <Button
+                              variant="outline" size="icon" className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                              disabled={typeof mat.id !== "number"}
+                              onClick={() => typeof mat.id === "number" && downloadMutation.mutate(mat.id)}
+                            >
                               <Download className="h-4 w-4" />
                             </Button>
                           </div>

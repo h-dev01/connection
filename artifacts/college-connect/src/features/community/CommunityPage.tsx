@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Code, Camera, Music, MessageCircle, Heart, Share2,
@@ -50,51 +51,89 @@ const STORIES = [
   { name: "Kavya S.",  src: "https://i.pravatar.cc/150?u=a042581f4e29026708d", ring: "ring-red-500" },
 ];
 
-/* ─── Seed posts ─────────────────────────────────────────── */
-const SEED_POSTS: Post[] = [
-  {
-    id: "p1", authorName: "Julian Chen", authorUser: "Julian Chen",
-    authorSrc: "https://i.pravatar.cc/150?u=a042581f4e29026702d",
-    dept: "CS Dept", timeAgo: "2h ago", badge: "PLATINUM", flair: "Announcement",
-    body: "Just wrapped up the 48-hour global hackathon! 🚀 Massive shoutout to my team. We built an AI tool that converts lecture recordings into interactive flashcards. Anyone want to beta test it? Drop a comment!",
-    imageSrc: "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&q=80",
-    likes: 142, liked: false, bookmarked: false,
-    comments: [
-      { id: "c1", authorName: "Priya S.", body: "That sounds amazing! I'd love to beta test it 🙌", timeAgo: "1h ago", likes: 8, liked: false },
-      { id: "c2", authorName: "Arjun R.", body: "Congratulations! What tech stack did you use?", timeAgo: "45m ago", likes: 4, liked: false },
-    ],
-  },
-  {
-    id: "p2", authorName: "Priya S.", authorUser: "Priya S.",
-    authorSrc: "https://i.pravatar.cc/150?u=a042581f4e29026703d",
-    dept: "Data Science", timeAgo: "5h ago", flair: "Study Help",
-    body: "Reminder: The ML paper reading group meets every Thursday at 6 PM in Lab 204. This week we're covering 'Attention Is All You Need'. Drop a 👋 if you're coming!",
-    likes: 67, liked: false, bookmarked: false,
-    comments: [
-      { id: "c3", authorName: "Dev P.", body: "I'll be there! Should we bring printed copies?", timeAgo: "4h ago", likes: 3, liked: false },
-    ],
-  },
-  {
-    id: "p3", authorName: "Sneha J.", authorUser: "Sneha J.",
-    authorSrc: "https://i.pravatar.cc/150?u=a042581f4e29026701d",
-    dept: "Architecture", timeAgo: "8h ago", flair: "Event",
-    body: "The Annual Architecture Exhibition opens this Friday at 5 PM in the Main Hall! 🏛️ Three years of student projects on display. Come see what we've been building. Everyone welcome!",
-    imageSrc: "https://images.unsplash.com/photo-1487700160041-babef9c3cb55?w=800&q=80",
-    likes: 94, liked: false, bookmarked: false,
+/* Feed posts are now loaded live from the community API (see fetchPosts /
+ * postRowToPost below) instead of hardcoded seed data. */
+
+/* ─── Live API types & helpers ───────────────────────────── */
+interface PostRow {
+  id: number;
+  authorId: number | null;
+  authorName: string | null;
+  authorAvatar: string | null;
+  authorDept: string | null;
+  authorLevel: string | null;
+  content: string;
+  imageUrl: string | null;
+  category: string;
+  likes: number;
+  commentsCount: number;
+  anonymous: boolean;
+  createdAt: string;
+}
+
+const CATEGORY_TO_FLAIR: Record<string, Flair> = {
+  announcement: "Announcement",
+  event: "Event",
+  question: "Question",
+  study_help: "Study Help",
+  campus_life: "Discussion",
+  fun: "Fun",
+};
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+function postRowToPost(p: PostRow): Post {
+  return {
+    id: String(p.id),
+    authorName: p.anonymous ? "Anonymous" : (p.authorName ?? "Student"),
+    authorUser: p.authorName ?? "",
+    authorSrc: p.anonymous ? undefined : (p.authorAvatar ?? undefined),
+    dept: p.authorDept ?? "Campus",
+    timeAgo: timeAgo(p.createdAt),
+    flair: CATEGORY_TO_FLAIR[p.category] ?? "Discussion",
+    body: p.content,
+    imageSrc: p.imageUrl ?? undefined,
+    likes: p.likes,
+    liked: false,
+    bookmarked: false,
     comments: [],
-  },
-  {
-    id: "p4", authorName: "Rahul M.", authorUser: "Rahul M.",
-    authorSrc: "https://i.pravatar.cc/150?u=a042581f4e29026709d",
-    dept: "Mech Dept", timeAgo: "1d ago", flair: "Question",
-    body: "Is it normal to feel completely lost during 3rd year Thermodynamics? 😅 Like I study for hours and nothing sticks. Any seniors who've been through this? How did you manage?",
-    likes: 113, liked: false, bookmarked: false,
-    comments: [
-      { id: "c4", authorName: "Julian Chen", body: "Been there! The trick is solving 10 numericals a day, not just reading theory.", timeAgo: "20h ago", likes: 22, liked: false },
-      { id: "c5", authorName: "Kavya S.", body: "Study groups help a lot. Reach out to your batch WhatsApp group!", timeAgo: "18h ago", likes: 15, liked: false },
-    ],
-  },
-];
+  };
+}
+
+async function fetchPosts(): Promise<PostRow[]> {
+  const res = await fetch("/api/posts");
+  if (!res.ok) throw new Error("Failed to load posts");
+  return res.json();
+}
+
+async function createApiPost(payload: { content: string; imageUrl?: string; category: string; authorName?: string }): Promise<PostRow> {
+  const res = await fetch("/api/posts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to create post");
+  return res.json();
+}
+
+async function likeApiPost(id: number): Promise<PostRow> {
+  const res = await fetch(`/api/posts/${id}/like`, { method: "PATCH" });
+  if (!res.ok) throw new Error("Failed to like post");
+  return res.json();
+}
+
+async function deleteApiPost(id: number): Promise<void> {
+  const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete post");
+}
 
 /* ─── Communities ────────────────────────────────────────── */
 const COMMUNITIES = [
@@ -369,39 +408,63 @@ type FeedTab = "all" | "following" | "events" | "q&a";
 
 export default function Community() {
   const { user } = useAuth();
-  const [posts, setPosts] = useState<Post[]>(SEED_POSTS);
+  const queryClient = useQueryClient();
+  const { data: apiPosts = [] } = useQuery({ queryKey: ["posts"], queryFn: fetchPosts });
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [seeded, setSeeded] = useState(false);
   const [tab, setTab] = useState<FeedTab>("all");
   const [communities, setCommunities] = useState(COMMUNITIES);
   const [toast, setToast] = useState<{ msg: string; type: "success"|"warn" } | null>(null);
   const [poll, setPoll] = useState<{ voted: number | null; counts: number[] }>({ voted: null, counts: [82, 18] });
+
+  useEffect(() => {
+    if (!seeded && apiPosts.length > 0) {
+      setSeeded(true);
+      setPosts(apiPosts.map(postRowToPost));
+    }
+  }, [seeded, apiPosts]);
 
   const notify = (msg: string, type: "success"|"warn" = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3200);
   };
 
+  const createMutation = useMutation({
+    mutationFn: createApiPost,
+    onSuccess: (row) => {
+      setPosts(p => [postRowToPost(row), ...p]);
+      notify("Post published! 🎉");
+    },
+  });
+
   const addPost = (body: string, imageSrc: string, flair: Flair | null) => {
-    const np: Post = {
-      id: `post_${Date.now()}`,
+    const categoryEntry = Object.entries(CATEGORY_TO_FLAIR).find(([, f]) => f === flair);
+    createMutation.mutate({
+      content: body,
+      imageUrl: imageSrc || undefined,
+      category: categoryEntry ? categoryEntry[0] : "campus_life",
       authorName: user?.name ?? "You",
-      authorUser: user?.name ?? "",
-      dept: "Campus",
-      timeAgo: "Just now",
-      flair: flair ?? undefined,
-      body,
-      imageSrc: imageSrc || undefined,
-      likes: 0, liked: false, bookmarked: false,
-      comments: [],
-    };
-    setPosts(p => [np, ...p]);
-    notify("Post published! 🎉");
+    });
   };
 
-  const deletePost = (id: string) => { setPosts(p => p.filter(x => x.id !== id)); notify("Post deleted."); };
+  const deletePost = (id: string) => {
+    setPosts(p => p.filter(x => x.id !== id));
+    if (/^\d+$/.test(id)) {
+      deleteApiPost(Number(id))
+        .then(() => queryClient.invalidateQueries({ queryKey: ["posts"] }))
+        .catch(() => notify("Failed to delete post on server.", "warn"));
+    }
+    notify("Post deleted.");
+  };
   const reportPost = (t: string) => notify(`"${t}" reported. Moderators will review.`, "warn");
 
-  const toggleLike = (id: string) =>
+  const toggleLike = (id: string) => {
     setPosts(p => p.map(x => x.id === id ? { ...x, liked: !x.liked, likes: x.liked ? x.likes - 1 : x.likes + 1 } : x));
+    const target = posts.find(x => x.id === id);
+    if (!target?.liked && /^\d+$/.test(id)) {
+      likeApiPost(Number(id)).catch(() => notify("Failed to sync like.", "warn"));
+    }
+  };
 
   const toggleBookmark = (id: string) =>
     setPosts(p => p.map(x => x.id === id ? { ...x, bookmarked: !x.bookmarked } : x));

@@ -116,9 +116,15 @@ folder it would create a fake dependency between unrelated features.
 | `features/moderator/` | `ModeratorPage.tsx` | Moderator workflow: reported content queue, student verification, campus stats. |
 | `features/misc/` | `NotFoundPage.tsx` | 404 fallback route. |
 
-Every feature page currently renders **realistic mock data** defined at the top
-of the file (see JSDoc comments) — swap these for real API calls via
-`lib/api-client-react` hooks as backend integration progresses.
+**Study Hub, Marketplace, and Community now render live data from the database**
+(via `fetch` + `@tanstack/react-query`'s `useQuery`/`useMutation`, calling
+`/api/study/materials`, `/api/marketplace/listings`, and `/api/posts`
+directly — not the generated `lib/api-client-react` hooks, which remain
+unused because codegen is bypassed, see Section 9). Creating a listing,
+posting to the feed, liking a post, and downloading/deleting persist to
+Postgres. Comments and bookmarks on Community posts are still client-side
+only (no `comments` table yet). Every other feature page still renders
+**realistic mock data** defined at the top of the file (see JSDoc comments).
 
 ### Cross-feature (shared) code
 - **`contexts/AuthContext.tsx`** — logged-in user/session state, role-based login logic, OTP flow. Used by `features/auth/` and `components/layout/SidebarLayout.tsx` (to filter nav by role).

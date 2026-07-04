@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, Plus, Heart, Share2, ShieldCheck, Flame, Tag,
@@ -54,61 +55,87 @@ interface Banner {
   color: string;
 }
 
-/* ─── Seed data ──────────────────────────────────────────── */
-const SEED_PRODUCTS: Product[] = [
-  {
-    id: "1", title: "Sony WH-1000XM4 Headphones", price: "₹12,500",
-    category: "ELECTRONICS", condition: "Like New",
-    description: "Bought 8 months ago, barely used. Comes with original box, carry case and cables. ANC works perfectly.",
-    photo: "https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?w=600&q=80",
-    contact: "WhatsApp: 9876543210", location: "A-Block Hostel",
-    sellerName: "Alex Rivera", sellerUser: "Alex Rivera", rep: "4.9",
-    postedAt: "2 hours ago",
-  },
-  {
-    id: "2", title: "Engineering Drawing Kit (Complete)", price: "₹850",
-    category: "SUPPLIES", condition: "Good",
-    description: "Full kit with drafter, mini-drafter, compass set, scales and stencils. Used for 2 semesters only.",
-    photo: "https://images.unsplash.com/photo-1585675100414-22b04fbb3530?w=600&q=80",
-    contact: "Call: 9123456789", location: "Campus Gate 2",
-    sellerName: "Rohan D.", sellerUser: "Rohan D.", rep: "4.7",
-    postedAt: "1 day ago",
-  },
-  {
-    id: "3", title: "MacBook Air M1 (2020) 256GB", price: "₹45,000",
-    category: "LAPTOPS", condition: "Good",
-    description: "13-inch M1 MacBook Air, 8GB RAM, 256GB SSD. Battery health 89%. Charger + sleeve included. No scratches.",
-    photo: "https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600&q=80",
-    contact: "WhatsApp: 9988776655", location: "Library Lobby",
-    sellerName: "Priya K.", sellerUser: "Priya K.", rep: "5.0",
-    postedAt: "3 days ago",
-  },
-  {
-    id: "4", title: "Physics Vol 1 & 2 – Resnick Halliday", price: "₹600",
-    category: "TEXTBOOKS", condition: "Fair",
-    description: "Both volumes together. Some highlighting in Vol 1 but all pages intact. Perfect for 1st year.",
-    photo: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=600&q=80",
-    contact: "WhatsApp: 9000011111", location: "Boys Hostel Reception",
-    sellerName: "Pooja M.", sellerUser: "Pooja M.", rep: "4.2",
-    postedAt: "5 days ago",
-  },
-];
-
-const SEED_HOUSING: Housing[] = [
-  {
-    id: "1", title: "Premium 2BHK Shared Flat – North Campus", price: "₹8,500",
-    type: "PG/Flat", desc: "Looking for 1 flatmate for a fully furnished 2BHK. Includes AC, fridge, washing machine. 5 mins walk from campus gate.",
-    amenities: ["Fiber WiFi", "Maid Incl.", "Gated Society"],
-    verified: true, image: "https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80",
-    sellerUser: "Rohan D.",
-  },
-];
+/* Buy/sell listings and housing listings are now loaded live from the
+ * marketplace API (see fetchListings / listingToProduct / listingToHousing
+ * below) instead of hardcoded seed data. */
 
 const DEFAULT_BANNERS: Banner[] = [
   { id: "b1", title: "End-of-Sem Sale 🎉", subtitle: "Students clearing out before exams — great deals on electronics, books, and more!", cta: "Browse Deals", image: "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200&q=80", color: "from-blue-900 to-indigo-900" },
   { id: "b2", title: "Got Textbooks?", subtitle: "Sell your used books to junior students. Every listing gets 100 CC Points.", cta: "Post a Book", image: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=1200&q=80", color: "from-emerald-900 to-teal-900" },
   { id: "b3", title: "Campus Housing Board", subtitle: "Find PGs, shared flats and hostels near campus. Verified listings only.", cta: "Find Housing", image: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&q=80", color: "from-violet-900 to-purple-900" },
 ];
+
+/* ─── Live API types & helpers ───────────────────────────── */
+interface ListingRow {
+  id: number;
+  title: string;
+  description: string | null;
+  price: number;
+  priceUnit: string;
+  category: string;
+  listingType: "buy_sell" | "housing" | "service";
+  imageUrl: string | null;
+  sellerName: string;
+  sellerRating: number;
+  sellerVerified: boolean;
+  location: string | null;
+  condition: string | null;
+  featured: boolean;
+  createdAt: string;
+}
+
+async function fetchListings(): Promise<ListingRow[]> {
+  const res = await fetch("/api/marketplace/listings");
+  if (!res.ok) throw new Error("Failed to load listings");
+  return res.json();
+}
+
+async function createListing(payload: Record<string, unknown>): Promise<ListingRow> {
+  const res = await fetch("/api/marketplace/listings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to create listing");
+  return res.json();
+}
+
+async function deleteListing(id: number): Promise<void> {
+  const res = await fetch(`/api/marketplace/listings/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete listing");
+}
+
+function listingToProduct(l: ListingRow): Product {
+  return {
+    id: String(l.id),
+    title: l.title,
+    price: `₹${l.price.toLocaleString("en-IN")}`,
+    category: l.category,
+    condition: l.condition ?? "Good",
+    description: l.description ?? "",
+    photo: l.imageUrl ?? CAT_IMAGES[l.category] ?? CAT_IMAGES.OTHER,
+    contact: `Contact: ${l.sellerName}`,
+    location: l.location ?? "Campus",
+    sellerName: l.sellerName,
+    sellerUser: l.sellerName,
+    rep: l.sellerRating.toFixed(1),
+    postedAt: new Date(l.createdAt).toLocaleDateString(),
+  };
+}
+
+function listingToHousing(l: ListingRow): Housing {
+  return {
+    id: String(l.id),
+    title: l.title,
+    price: `₹${l.price.toLocaleString("en-IN")}${l.priceUnit}`,
+    type: l.category,
+    desc: l.description ?? "",
+    amenities: [],
+    verified: l.sellerVerified,
+    image: l.imageUrl ?? CAT_IMAGES.OTHER,
+    sellerUser: l.sellerName,
+  };
+}
 
 const CATS = ["ELECTRONICS", "LAPTOPS", "TEXTBOOKS", "SUPPLIES", "CLOTHING", "FURNITURE", "CYCLES", "SPORTS", "OTHER"];
 const CONDITIONS = ["New", "Like New", "Good", "Fair", "For Parts"];
@@ -521,8 +548,12 @@ export default function Marketplace() {
   const isMod   = user?.role === "low_admin" || user?.role === "admin";
   const isAdmin = user?.role === "admin";
 
-  const [products, setProducts]   = useState<Product[]>(SEED_PRODUCTS);
-  const [housing,  setHousing]    = useState<Housing[]>(SEED_HOUSING);
+  const queryClient = useQueryClient();
+  const { data: listings = [] } = useQuery({ queryKey: ["listings"], queryFn: fetchListings });
+
+  const products = listings.filter(l => l.listingType === "buy_sell").map(listingToProduct);
+  const housing  = listings.filter(l => l.listingType === "housing").map(listingToHousing);
+
   const [banners,  setBanners]    = useState<Banner[]>(DEFAULT_BANNERS);
   const [showForm, setShowForm]   = useState(false);
   const [search,   setSearch]     = useState("");
@@ -533,6 +564,16 @@ export default function Marketplace() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  const createMutation = useMutation({
+    mutationFn: createListing,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["listings"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteListing,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["listings"] }),
+  });
 
   const filteredProducts = products.filter(p => {
     const matchSearch = p.title.toLowerCase().includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase());
@@ -583,7 +624,21 @@ export default function Marketplace() {
             <SellListingModal
               key="sell-modal"
               onClose={() => setShowForm(false)}
-              onAdd={(p) => { setProducts(prev => [p, ...prev]); notify("🎉 Your listing is live!"); }}
+              onAdd={(p) => {
+                createMutation.mutate({
+                  title: p.title,
+                  description: p.description,
+                  price: Number(p.price.replace(/[^0-9.]/g, "")) || 0,
+                  priceUnit: "",
+                  category: p.category,
+                  listingType: "buy_sell",
+                  imageUrl: p.photo,
+                  sellerName: user?.name ?? "You",
+                  location: p.location,
+                  condition: p.condition,
+                });
+                notify("🎉 Your listing is live!");
+              }}
             />
           )}
         </AnimatePresence>
@@ -634,7 +689,7 @@ export default function Marketplace() {
                           <ProductCard
                             product={product}
                             isMod={isMod}
-                            onDelete={() => { setProducts(p => p.filter(x => x.id !== product.id)); notify("Listing deleted."); }}
+                            onDelete={() => { deleteMutation.mutate(Number(product.id)); notify("Listing deleted."); }}
                             onReport={() => notify(`"${product.title}" reported. Mods will review.`, "warn")}
                           />
                         </motion.div>
@@ -666,7 +721,7 @@ export default function Marketplace() {
                             <div className="flex items-center gap-2 ml-4">
                               <p className="text-2xl font-black text-blue-600 whitespace-nowrap">{house.price}<span className="text-sm font-normal text-slate-500">/mo</span></p>
                               <ActionMenu title={house.title} isOwner={isOwner} isModerator={isMod}
-                                onDelete={() => { setHousing(h => h.filter(x => x.id !== house.id)); notify("Housing listing deleted."); }}
+                                onDelete={() => { deleteMutation.mutate(Number(house.id)); notify("Housing listing deleted."); }}
                                 onReport={() => notify(`"${house.title}" reported.`, "warn")} />
                             </div>
                           </div>
@@ -679,7 +734,7 @@ export default function Marketplace() {
                               <ShieldCheck className="h-4 w-4 mr-1" /> Estate Verified
                             </Badge>
                             {isOwner
-                              ? <Button className="bg-red-600 hover:bg-red-700 text-white font-bold" onClick={() => { setHousing(h => h.filter(x => x.id !== house.id)); notify("Deleted."); }}>Delete Listing</Button>
+                              ? <Button className="bg-red-600 hover:bg-red-700 text-white font-bold" onClick={() => { deleteMutation.mutate(Number(house.id)); notify("Deleted."); }}>Delete Listing</Button>
                               : <Button className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">Book Visit</Button>}
                           </div>
                         </div>
