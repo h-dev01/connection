@@ -7,11 +7,15 @@ import studyRouter from "./study";
 import marketplaceRouter from "./marketplace";
 import clubsRouter from "./clubs";
 import statsRouter from "./stats";
+import adminRouter from "./admin";
+import moderatorRouter from "./moderator";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(adminRouter);
+router.use(moderatorRouter);
 router.use(usersRouter);
 router.use(communityRouter);
 router.use(studyRouter);

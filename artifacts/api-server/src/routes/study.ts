@@ -1,22 +1,34 @@
 /**
  * Study materials routes.
+ * Student-facing GET returns only approved materials.
+ * Moderator approval handled in moderator.ts.
  */
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
 import { db, studyMaterialsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
-// GET /study/materials — list with optional filters
-router.get("/study/materials", async (req, res): Promise<void> => {
-  const materials = await db.select().from(studyMaterialsTable).orderBy(desc(studyMaterialsTable.downloads)).limit(50);
+// GET /study/materials — approved only for students
+router.get("/study/materials", async (_req, res): Promise<void> => {
+  const materials = await db
+    .select()
+    .from(studyMaterialsTable)
+    .where(eq(studyMaterialsTable.status, "approved"))
+    .orderBy(desc(studyMaterialsTable.downloads))
+    .limit(50);
   res.json(materials);
 });
 
-// GET /study/recent — for dashboard widget
+// GET /study/recent — for dashboard widget (approved only)
 router.get("/study/recent", async (_req, res): Promise<void> => {
-  const materials = await db.select().from(studyMaterialsTable).orderBy(desc(studyMaterialsTable.createdAt)).limit(4);
+  const materials = await db
+    .select()
+    .from(studyMaterialsTable)
+    .where(eq(studyMaterialsTable.status, "approved"))
+    .orderBy(desc(studyMaterialsTable.createdAt))
+    .limit(4);
   res.json(materials);
 });
 
@@ -30,7 +42,7 @@ router.get("/study/materials/:id", async (req, res): Promise<void> => {
   res.json(m);
 });
 
-// POST /study/materials — upload
+// POST /study/materials — student upload (lands in "pending")
 const CreateMaterial = z.object({
   title: z.string().min(1),
   subject: z.string().min(1),
@@ -45,7 +57,9 @@ const CreateMaterial = z.object({
 router.post("/study/materials", async (req, res): Promise<void> => {
   const parsed = CreateMaterial.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const [m] = await db.insert(studyMaterialsTable).values(parsed.data).returning();
+  const [m] = await db.insert(studyMaterialsTable)
+    .values({ ...parsed.data, status: "pending" })
+    .returning();
   res.status(201).json(m);
 });
 
@@ -56,7 +70,11 @@ router.patch("/study/materials/:id/download", async (req, res): Promise<void> =>
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   const [m] = await db.select().from(studyMaterialsTable).where(eq(studyMaterialsTable.id, id));
   if (!m) { res.status(404).json({ error: "Not found" }); return; }
-  const [updated] = await db.update(studyMaterialsTable).set({ downloads: m.downloads + 1 }).where(eq(studyMaterialsTable.id, id)).returning();
+  const [updated] = await db
+    .update(studyMaterialsTable)
+    .set({ downloads: m.downloads + 1 })
+    .where(eq(studyMaterialsTable.id, id))
+    .returning();
   res.json(updated);
 });
 
