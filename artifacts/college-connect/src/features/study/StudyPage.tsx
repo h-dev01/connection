@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Download, Star, Eye, Clock, Zap, FileText,
   CheckCircle2, TrendingUp, Users, Briefcase, Upload,
-  FilePlus, AlertCircle, X, ChevronRight, Search, ShieldCheck,
+  FilePlus, AlertCircle, X, ChevronRight, Search, ShieldCheck, Trash2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,11 @@ async function incrementDownload(id: number): Promise<StudyMaterial> {
   const res = await fetch(`/api/study/materials/${id}/download`, { method: "PATCH" });
   if (!res.ok) throw new Error("Failed to record download");
   return res.json();
+}
+
+async function deleteMaterial(id: number): Promise<void> {
+  const res = await fetch(`/api/moderator/materials/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete material");
 }
 
 const INTERNSHIPS = [
@@ -490,6 +495,11 @@ export default function Study() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-materials"] }),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteMaterial,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-materials"] }),
+  });
+
   // Merge approved submitted materials (pending sync to DB) into the public list
   const approvedFromContrib = submissions
     .filter((s) => s.status === "approved")
@@ -634,6 +644,17 @@ export default function Study() {
                             >
                               <Download className="h-4 w-4" />
                             </Button>
+                            {isMod && typeof mat.id === "number" && (
+                              <Button
+                                variant="ghost" size="icon"
+                                className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                                disabled={deleteMutation.isPending}
+                                onClick={() => deleteMutation.mutate(mat.id as number)}
+                                title="Delete material"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </motion.div>
                       ))}
