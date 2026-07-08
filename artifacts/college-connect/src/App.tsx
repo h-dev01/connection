@@ -11,6 +11,7 @@ import { ProfileCompleteModal } from "@/components/shared/ProfileCompleteModal";
 // Feature pages — one folder per website feature (see AIread.md for the full map)
 import Home from "@/features/home/HomePage";
 import Login from "@/features/auth/LoginPage";
+import Signup from "@/features/auth/SignupPage";
 import Dashboard from "@/features/dashboard/DashboardPage";
 import Study from "@/features/study/StudyPage";
 import Marketplace from "@/features/marketplace/MarketplacePage";
@@ -37,6 +38,7 @@ function Router() {
       {/* Public pages */}
       <Route path="/" component={Home} />
       <Route path="/login" component={Login} />
+      <Route path="/signup" component={Signup} />
 
       {/* App pages */}
       <Route path="/dashboard">

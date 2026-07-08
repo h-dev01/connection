@@ -1,16 +1,22 @@
 /**
- * Login page — CollegeConnect
+ * LoginPage — sign-in for CollegeConnect
  *
- * Students:    Email → OTP verification → logged in → profile completion modal
- * Admin/Mod:   Role select → Email + Password
+ * Student flow (2 steps):
+ *   Step 1: Email + Password  → POST /api/auth/signin
+ *   Step 2: 6-digit OTP       → POST /api/auth/signin/verify
+ *
+ * Admin / Mod flow: role select → email + password (demo, client-side only)
+ *
+ * Security: generic "Invalid credentials" message — never reveals whether
+ * an email is registered.
  */
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
   Mail, Lock, GraduationCap, ShieldAlert, ShieldCheck,
   Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2,
-  KeyRound, RefreshCw, Sparkles,
+  KeyRound, RefreshCw,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { useAuth, type UserRole } from "@/contexts/AuthContext";
 import { homeRouteForRole } from "@/features/auth/auth-utils";
 
-/* ─── Staff role definitions (admin / mod) ───────────────── */
+/* ─── Staff role definitions ─────────────────────────────────── */
 const STAFF_ROLES: {
   key: "low_admin" | "admin";
   label: string;
@@ -55,45 +61,30 @@ const STAFF_ROLES: {
   },
 ];
 
-/* ─── OTP input — 6 boxes ────────────────────────────────── */
+/* ─── OTP input — 6 boxes ────────────────────────────────────── */
 function OtpInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const digits = value.padEnd(6, "").split("").slice(0, 6);
-
   const handleKey = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace" && !digits[i] && i > 0) {
-      const el = document.getElementById(`otp-${i - 1}`);
-      el?.focus();
-      const next = digits.slice(0, i - 1).join("") + digits.slice(i).join("");
-      onChange(next.slice(0, 6));
+      document.getElementById(`otp-${i - 1}`)?.focus();
+      onChange(digits.slice(0, i - 1).join("") + digits.slice(i).join(""));
     }
   };
-
   const handleChange = (i: number, v: string) => {
     const char = v.replace(/\D/g, "").slice(-1);
     const next = digits.map((d, idx) => (idx === i ? char : d)).join("").slice(0, 6);
     onChange(next);
-    if (char && i < 5) {
-      setTimeout(() => document.getElementById(`otp-${i + 1}`)?.focus(), 0);
-    }
+    if (char && i < 5) setTimeout(() => document.getElementById(`otp-${i + 1}`)?.focus(), 0);
   };
-
   return (
     <div className="flex gap-3 justify-center">
       {[0, 1, 2, 3, 4, 5].map((i) => (
-        <input
-          key={i}
-          id={`otp-${i}`}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={digits[i] ?? ""}
-          onChange={(e) => handleChange(i, e.target.value)}
+        <input key={i} id={`otp-${i}`} type="text" inputMode="numeric" maxLength={1}
+          value={digits[i] ?? ""} onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKey(i, e)}
           className={cn(
             "w-12 h-14 text-center text-2xl font-bold rounded-xl border-2 outline-none transition-all",
-            digits[i]
-              ? "border-blue-500 bg-blue-50 text-blue-700"
-              : "border-slate-200 bg-white text-slate-900 focus:border-blue-400"
+            digits[i] ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-900 focus:border-blue-400"
           )}
         />
       ))}
@@ -101,53 +92,79 @@ function OtpInput({ value, onChange }: { value: string; onChange: (v: string) =>
   );
 }
 
-/* ─── Main page ──────────────────────────────────────────── */
+/* ─── Main page ──────────────────────────────────────────────── */
 export default function Login() {
-  const { login, signupWithEmail, verifyOtp } = useAuth();
+  const { login, signinWithPassword, verifySigninOtp } = useAuth();
   const [, navigate] = useLocation();
 
-  // Flow: "choose" | "student-email" | "student-otp" | "staff-creds"
-  const [flow, setFlow] = useState<"choose" | "student-email" | "student-otp" | "staff-creds">("choose");
+  // Flow states
+  type Flow = "choose" | "student-creds" | "student-otp" | "staff-creds";
+  const [flow, setFlow] = useState<Flow>("choose");
   const [selectedRole, setSelectedRole] = useState<"low_admin" | "admin" | null>(null);
 
-  // Student OTP state
+  // Student signin state
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [credsLoading, setCredsLoading] = useState(false);
+  const [credsError, setCredsError] = useState("");
+
+  // OTP state
   const [otp, setOtp] = useState("");
   const [demoOtp, setDemoOtp] = useState("");
   const [otpError, setOtpError] = useState("");
   const [otpLoading, setOtpLoading] = useState(false);
 
+  // Countdown for resend
+  const [countdown, setCountdown] = useState(60);
+  const [canResend, setCanResend] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCountdown = useCallback(() => {
+    setCountdown(60);
+    setCanResend(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) { clearInterval(timerRef.current!); setCanResend(true); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+
   // Staff login state
   const [staffForm, setStaffForm] = useState({ email: "", password: "" });
-  const [showPass, setShowPass] = useState(false);
+  const [showStaffPass, setShowStaffPass] = useState(false);
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffError, setStaffError] = useState("");
 
   const staffConfig = STAFF_ROLES.find((r) => r.key === selectedRole);
 
-  /* ─ Handlers ─ */
-
-  const handleStudentEmailSubmit = async (e: React.FormEvent) => {
+  /* ─ Step 1: student creds ─ */
+  const handleStudentCreds = async (e: React.FormEvent) => {
     e.preventDefault();
-    setOtpLoading(true);
-    setOtpError("");
-    const res = await signupWithEmail(email);
-    setOtpLoading(false);
-    if (res.ok && res.otp) {
-      setDemoOtp(res.otp);
-      setOtp(res.otp);   // auto-fill the boxes
+    setCredsLoading(true);
+    setCredsError("");
+    const res = await signinWithPassword(email, password);
+    setCredsLoading(false);
+    if (res.ok) {
+      setDemoOtp(res.demoOtp ?? "");
       setFlow("student-otp");
+      startCountdown();
     } else {
-      setOtpError(res.error ?? "Failed to send OTP.");
+      setCredsError(res.error ?? "Invalid credentials");
     }
   };
 
+  /* ─ Step 2: OTP verify ─ */
   const handleOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (otp.length !== 6) { setOtpError("Enter all 6 digits."); return; }
     setOtpLoading(true);
     setOtpError("");
-    const res = await verifyOtp(email, otp);
+    const res = await verifySigninOtp(email, otp);
     setOtpLoading(false);
     if (res.ok) {
       navigate(homeRouteForRole("student"));
@@ -156,6 +173,17 @@ export default function Login() {
     }
   };
 
+  /* ─ Resend OTP ─ */
+  const handleResend = async () => {
+    setOtpError("");
+    setOtpLoading(true);
+    const res = await signinWithPassword(email, password);
+    setOtpLoading(false);
+    if (res.ok) { setDemoOtp(res.demoOtp ?? ""); setOtp(""); startCountdown(); }
+    else setOtpError(res.error ?? "Failed to resend OTP.");
+  };
+
+  /* ─ Staff submit ─ */
   const handleStaffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRole) return;
@@ -163,33 +191,29 @@ export default function Login() {
     setStaffLoading(true);
     const result = await login(staffForm.email, staffForm.password, selectedRole);
     setStaffLoading(false);
-    if (result.ok) {
-      navigate(homeRouteForRole(selectedRole));
-    } else {
-      setStaffError(result.error ?? "Login failed.");
-    }
+    if (result.ok) navigate(homeRouteForRole(selectedRole));
+    else setStaffError(result.error ?? "Login failed.");
   };
 
   const reset = () => {
     setFlow("choose");
     setSelectedRole(null);
     setEmail("");
+    setPassword("");
     setOtp("");
     setDemoOtp("");
+    setCredsError("");
     setOtpError("");
     setStaffError("");
     setStaffForm({ email: "", password: "" });
   };
 
-  /* ─ Render ─ */
   return (
     <div className="min-h-screen flex">
-
       {/* ── Left branding panel ── */}
       <div className="hidden lg:flex w-[46%] bg-[#0f172a] flex-col justify-between p-14 relative overflow-hidden">
         <div className="absolute top-[-120px] left-[-80px] w-[400px] h-[400px] rounded-full bg-blue-600/10 blur-3xl pointer-events-none" />
         <div className="absolute bottom-[-60px] right-[-60px] w-[300px] h-[300px] rounded-full bg-violet-600/10 blur-3xl pointer-events-none" />
-
         <Link href="/">
           <div className="flex items-center gap-3 relative z-10 cursor-pointer">
             <div className="w-10 h-10 bg-blue-500 rounded-xl flex items-center justify-center shadow-lg">
@@ -198,7 +222,6 @@ export default function Login() {
             <span className="text-white text-2xl font-bold tracking-tight">CollegeConnect</span>
           </div>
         </Link>
-
         <div className="relative z-10 space-y-8">
           <div>
             <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 mb-5">Campus Super App</Badge>
@@ -208,35 +231,29 @@ export default function Login() {
               Your tools.
             </h1>
             <p className="text-slate-400 mt-5 text-base leading-relaxed max-w-sm">
-              Students sign up instantly with their college email.
-              Moderators and admins log in with their staff credentials.
+              Students sign in with email and password.
+              Moderators and admins log in with staff credentials.
             </p>
           </div>
-
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="p-1.5 rounded-lg bg-blue-50"><GraduationCap className="h-4 w-4 text-blue-600" /></div>
-              <span className="text-slate-300 text-sm font-medium">Student — Email + OTP</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="p-1.5 rounded-lg bg-emerald-50"><ShieldCheck className="h-4 w-4 text-emerald-600" /></div>
-              <span className="text-slate-300 text-sm font-medium">Low Admin — Moderator</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="p-1.5 rounded-lg bg-violet-50"><ShieldAlert className="h-4 w-4 text-violet-600" /></div>
-              <span className="text-slate-300 text-sm font-medium">High Admin — Full Access</span>
-            </div>
+            {[
+              { icon: GraduationCap, text: "Student — Email + Password + OTP" },
+              { icon: ShieldCheck, text: "Low Admin — Moderator" },
+              { icon: ShieldAlert, text: "High Admin — Full Access" },
+            ].map(({ icon: Icon, text }) => (
+              <div key={text} className="flex items-center gap-3">
+                <div className="p-1.5 rounded-lg bg-blue-50"><Icon className="h-4 w-4 text-blue-600" /></div>
+                <span className="text-slate-300 text-sm font-medium">{text}</span>
+              </div>
+            ))}
           </div>
         </div>
-
         <p className="text-slate-700 text-xs relative z-10">Trusted by 50,000+ verified students across India</p>
       </div>
 
       {/* ── Right form panel ── */}
       <div className="flex-1 flex items-center justify-center bg-slate-50 px-6 py-12">
         <div className="w-full max-w-lg">
-
-          {/* Mobile logo */}
           <Link href="/">
             <div className="flex items-center gap-2 mb-8 lg:hidden cursor-pointer">
               <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
@@ -253,15 +270,12 @@ export default function Login() {
               <motion.div key="choose"
                 initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 transition={{ duration: 0.22 }}>
-                <h2 className="text-3xl font-extrabold text-slate-900 mb-1">Welcome to CollegeConnect</h2>
+                <h2 className="text-3xl font-extrabold text-slate-900 mb-1">Welcome back</h2>
                 <p className="text-slate-500 text-sm mb-8">Choose how you want to sign in</p>
 
                 <div className="space-y-4">
-                  {/* Student card */}
-                  <button
-                    onClick={() => setFlow("student-email")}
-                    className="w-full text-left p-5 rounded-2xl border-2 bg-white transition-all hover:shadow-md hover:border-blue-500 border-slate-200 group"
-                  >
+                  <button onClick={() => setFlow("student-creds")}
+                    className="w-full text-left p-5 rounded-2xl border-2 bg-white transition-all hover:shadow-md hover:border-blue-500 border-slate-200 group">
                     <div className="flex items-center gap-4">
                       <div className="p-3 rounded-xl bg-blue-50">
                         <GraduationCap className="h-6 w-6 text-blue-600" />
@@ -271,27 +285,21 @@ export default function Login() {
                           <span className="font-bold text-slate-900">Student</span>
                           <Badge className="text-xs border-0 bg-blue-100 text-blue-600 font-medium">Most common</Badge>
                         </div>
-                        <p className="text-sm text-slate-500 mt-0.5">Sign up / sign in with your college email + OTP</p>
+                        <p className="text-sm text-slate-500 mt-0.5">Sign in with email + password + OTP</p>
                       </div>
                       <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-slate-600 transition-colors flex-shrink-0" />
                     </div>
                   </button>
 
-                  {/* Staff cards */}
                   {STAFF_ROLES.map(({ key, label, subtitle, icon: Icon, color, border, bg, badge }) => (
-                    <button
-                      key={key}
+                    <button key={key}
                       onClick={() => {
                         setSelectedRole(key);
-                        const hint = STAFF_ROLES.find(r => r.key === key)!.hint.split(" / ");
+                        const hint = STAFF_ROLES.find((r) => r.key === key)!.hint.split(" / ");
                         setStaffForm({ email: hint[0], password: hint[1] });
                         setFlow("staff-creds");
                       }}
-                      className={cn(
-                        "w-full text-left p-5 rounded-2xl border-2 bg-white transition-all hover:shadow-md group",
-                        "border-slate-200 hover:" + border
-                      )}
-                    >
+                      className="w-full text-left p-5 rounded-2xl border-2 bg-white transition-all hover:shadow-md group border-slate-200">
                       <div className="flex items-center gap-4">
                         <div className={cn("p-3 rounded-xl", bg)}>
                           <Icon className={cn("h-6 w-6", color)} />
@@ -308,12 +316,17 @@ export default function Login() {
                     </button>
                   ))}
                 </div>
+
+                <p className="text-center text-sm text-slate-500 mt-8">
+                  New to CollegeConnect?{" "}
+                  <Link href="/signup" className="text-blue-600 font-semibold hover:underline">Create an account</Link>
+                </p>
               </motion.div>
             )}
 
-            {/* ── STUDENT: Enter Email ── */}
-            {flow === "student-email" && (
-              <motion.div key="student-email"
+            {/* ── STUDENT: Credentials ── */}
+            {flow === "student-creds" && (
+              <motion.div key="student-creds"
                 initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 transition={{ duration: 0.22 }}>
 
@@ -324,73 +337,75 @@ export default function Login() {
 
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl mb-6 bg-blue-50">
                   <GraduationCap className="h-5 w-5 text-blue-600" />
-                  <span className="font-semibold text-sm text-blue-600">Student Sign In / Sign Up</span>
+                  <span className="font-semibold text-sm text-blue-600">Student Sign In</span>
                 </div>
 
-                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Enter your college email</h2>
-                <p className="text-slate-500 text-sm mb-6">
-                  We'll send a one-time password to verify your identity.
-                </p>
+                <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Sign in to your account</h2>
+                <p className="text-slate-500 text-sm mb-6">We'll send a verification code after checking your credentials.</p>
 
-                <form onSubmit={handleStudentEmailSubmit} className="space-y-4">
+                <form onSubmit={handleStudentCreds} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">College Email</label>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Email</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                      <Input
-                        type="email"
-                        placeholder="yourname@college.edu"
-                        className="h-11 pl-10 bg-white"
-                        value={email}
-                        onChange={(e) => { setEmail(e.target.value); setOtpError(""); }}
-                        required
-                        autoFocus
-                      />
+                      <Input type="email" placeholder="you@college.edu" className="h-11 pl-10 bg-white"
+                        value={email} onChange={(e) => { setEmail(e.target.value); setCredsError(""); }}
+                        required autoFocus />
                     </div>
                   </div>
 
-                  {otpError && (
-                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">{otpError}</p>
-                  )}
-
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start gap-2">
-                    <Sparkles className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-blue-700">
-                      Use <strong>student@college.edu</strong> to log in with the demo student account (Alex Rivera).
-                      Or enter any email to create a new account.
-                    </p>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input type={showPass ? "text" : "password"} placeholder="••••••••"
+                        className="h-11 pl-10 pr-10 bg-white"
+                        value={password} onChange={(e) => { setPassword(e.target.value); setCredsError(""); }}
+                        required />
+                      <button type="button" onClick={() => setShowPass((p) => !p)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
 
-                  <Button type="submit" disabled={otpLoading} className="w-full h-11 font-bold bg-blue-600 hover:bg-blue-700">
-                    {otpLoading ? (
+                  {credsError && (
+                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5">{credsError}</p>
+                  )}
+
+                  <Button type="submit" disabled={credsLoading} className="w-full h-11 font-bold bg-blue-600 hover:bg-blue-700">
+                    {credsLoading ? (
                       <span className="flex items-center gap-2">
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        Sending OTP…
+                        Checking credentials…
                       </span>
                     ) : (
-                      <span className="flex items-center gap-2">
-                        Send OTP <ArrowRight className="h-4 w-4" />
-                      </span>
+                      <span className="flex items-center gap-2">Continue <ArrowRight className="h-4 w-4" /></span>
                     )}
                   </Button>
                 </form>
+
+                <p className="text-center text-sm text-slate-500 mt-6">
+                  Don't have an account?{" "}
+                  <Link href="/signup" className="text-blue-600 font-semibold hover:underline">Sign up</Link>
+                </p>
               </motion.div>
             )}
 
-            {/* ── STUDENT: Enter OTP ── */}
+            {/* ── STUDENT: OTP ── */}
             {flow === "student-otp" && (
               <motion.div key="student-otp"
                 initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }}
                 transition={{ duration: 0.22 }}>
 
-                <button onClick={() => { setFlow("student-email"); setOtp(""); setOtpError(""); }}
+                <button onClick={() => { setFlow("student-creds"); setOtp(""); setOtpError(""); }}
                   className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 text-sm font-medium mb-6 transition-colors">
-                  <ArrowLeft className="h-4 w-4" /> Change email
+                  <ArrowLeft className="h-4 w-4" /> Change credentials
                 </button>
 
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl mb-6 bg-blue-50">
                   <KeyRound className="h-5 w-5 text-blue-600" />
-                  <span className="font-semibold text-sm text-blue-600">Verify your email</span>
+                  <span className="font-semibold text-sm text-blue-600">Verify your identity</span>
                 </div>
 
                 <h2 className="text-2xl font-extrabold text-slate-900 mb-1">Enter the 6-digit OTP</h2>
@@ -398,19 +413,20 @@ export default function Login() {
                   Sent to <strong className="text-slate-700">{email}</strong>
                 </p>
 
-                {/* Demo OTP hint */}
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3 mb-6">
-                  <div className="p-1.5 bg-amber-100 rounded-lg">
-                    <KeyRound className="h-4 w-4 text-amber-600" />
+                {demoOtp && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3 mb-6">
+                    <div className="p-1.5 bg-amber-100 rounded-lg">
+                      <KeyRound className="h-4 w-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800">Demo OTP (no real email sent)</p>
+                      <p className="text-xl font-bold tracking-[0.25em] text-amber-700 mt-0.5">{demoOtp}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold text-amber-800">Demo OTP (no real email sent)</p>
-                    <p className="text-xl font-bold tracking-[0.25em] text-amber-700 mt-0.5">{demoOtp}</p>
-                  </div>
-                </div>
+                )}
 
                 <form onSubmit={handleOtpVerify} className="space-y-5">
-                  <OtpInput value={otp} onChange={setOtp} />
+                  <OtpInput value={otp} onChange={(v) => { setOtp(v); setOtpError(""); }} />
 
                   {otpError && (
                     <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-center">{otpError}</p>
@@ -430,17 +446,20 @@ export default function Login() {
                     )}
                   </Button>
 
-                  <div className="flex items-center justify-center gap-1 text-xs text-slate-500">
-                    <span>Didn't get it?</span>
-                    <button type="button"
-                      className="text-blue-600 font-semibold hover:underline flex items-center gap-1"
-                      onClick={async () => {
-                        setOtpError("");
-                        const res = await signupWithEmail(email);
-                        if (res.ok && res.otp) { setDemoOtp(res.otp); setOtp(res.otp); }
-                      }}>
-                      <RefreshCw className="h-3 w-3" /> Resend OTP
-                    </button>
+                  <div className="flex items-center justify-center gap-1.5 text-sm text-slate-500">
+                    {canResend ? (
+                      <>
+                        <span>Didn't receive it?</span>
+                        <button type="button" disabled={otpLoading} onClick={handleResend}
+                          className="text-blue-600 font-semibold hover:underline flex items-center gap-1">
+                          <RefreshCw className="h-3.5 w-3.5" /> Resend OTP
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-slate-400">
+                        Resend available in <strong className="text-slate-600">{countdown}s</strong>
+                      </span>
+                    )}
                   </div>
                 </form>
               </motion.div>
@@ -481,12 +500,12 @@ export default function Login() {
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">Password</label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                      <Input type={showPass ? "text" : "password"} placeholder="••••••••"
+                      <Input type={showStaffPass ? "text" : "password"} placeholder="••••••••"
                         className="h-11 pl-10 pr-10 bg-white"
                         value={staffForm.password} onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })} required />
-                      <button type="button" onClick={() => setShowPass(p => !p)}
+                      <button type="button" onClick={() => setShowStaffPass((p) => !p)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                        {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        {showStaffPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
                   </div>
@@ -513,7 +532,7 @@ export default function Login() {
                       </span>
                     ) : (
                       <span className="flex items-center gap-2">
-                        Sign In as {staffConfig.label} <ArrowRight className="h-4 w-4" />
+                        <CheckCircle2 className="h-4 w-4" /> Sign In as {staffConfig.badge}
                       </span>
                     )}
                   </Button>
