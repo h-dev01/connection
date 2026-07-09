@@ -89,6 +89,8 @@ const FeatureSchema = z.object({
   description: z.string().optional(),
   defaultEnabled: z.boolean().default(true),
   forcedActive: z.boolean().default(false),
+  globalEnabled: z.boolean().default(true),
+  parentName: z.string().nullable().optional(),
 });
 
 // POST /api/admin/features
@@ -106,9 +108,14 @@ router.patch("/admin/features/:id", async (req, res): Promise<void> => {
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   const parsed = FeatureSchema.partial().extend({ retired: z.boolean().optional() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
+  const [before] = await db.select().from(featureRegistryTable).where(eq(featureRegistryTable.id, id));
+  if (!before) { res.status(404).json({ error: "Not found" }); return; }
   const [row] = await db.update(featureRegistryTable).set(parsed.data).where(eq(featureRegistryTable.id, id)).returning();
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  await writeAudit({ actorName: req.body.actorName ?? "Admin", actorRole: "admin", action: "update_feature", entityType: "feature", entityId: String(id), entityLabel: row.label });
+  await writeAudit({
+    actorName: req.body.actorName ?? "Admin", actorRole: "admin", action: "update_feature",
+    entityType: "feature", entityId: String(id), entityLabel: row.label,
+    beforeState: `globalEnabled=${before.globalEnabled}`, afterState: `globalEnabled=${row.globalEnabled}`,
+  });
   res.json(row);
 });
 

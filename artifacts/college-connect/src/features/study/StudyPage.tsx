@@ -67,6 +67,12 @@ async function deleteMaterial(id: number): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete material");
 }
 
+async function fetchFeatureStatus(): Promise<Record<string, boolean>> {
+  const res = await fetch("/api/study/feature-status");
+  if (!res.ok) throw new Error("Failed to load feature status");
+  return res.json();
+}
+
 const INTERNSHIPS = [
   { id: "1", title: "Frontend Developer Intern", company: "TechCorp India", salary: "₹25k/mo", status: "NEW" },
   { id: "2", title: "Data Analyst Intern", company: "DataSync Solutions", salary: "₹30k/mo", status: "OPEN" },
@@ -490,6 +496,12 @@ export default function Study() {
     queryFn: fetchMaterials,
   });
 
+  const { data: featureStatus = {}, isLoading: featureStatusLoading } = useQuery({
+    queryKey: ["study-feature-status"],
+    queryFn: fetchFeatureStatus,
+  });
+  const isOn = (name: string) => featureStatus[name] !== false;
+
   const downloadMutation = useMutation({
     mutationFn: incrementDownload,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["study-materials"] }),
@@ -522,6 +534,22 @@ export default function Study() {
     color: TYPE_COLORS[m.fileType] ?? "text-slate-500 bg-slate-100",
   }));
   const allMaterials = [...liveMaterials, ...approvedFromContrib];
+
+  if (!featureStatusLoading && !isOn("study_hub")) {
+    return (
+      <div className="flex-1 min-h-screen bg-slate-50 flex items-center justify-center p-8">
+        <div className="text-center max-w-md">
+          <div className="h-16 w-16 rounded-2xl bg-slate-200 flex items-center justify-center mx-auto mb-4">
+            <BookOpen className="h-8 w-8 text-slate-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900 mb-2">Study & Career Hub is unavailable</h1>
+          <p className="text-slate-500">
+            This feature has been temporarily disabled by an administrator. Please check back later.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 p-8 bg-slate-50 min-h-screen pb-24">
@@ -570,6 +598,7 @@ export default function Study() {
           >
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
+                {isOn("study_materials") && (
                 <Card className="border-none shadow-sm">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
@@ -661,9 +690,12 @@ export default function Study() {
                     </div>
                   </CardContent>
                 </Card>
+                )}
 
                 {/* AI Tools row */}
+                {(isOn("ai_summarizer") || isOn("exam_prep_hub")) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {isOn("ai_summarizer") && (
                   <Card className="border-none shadow-sm bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
                     <CardContent className="p-6">
                       <Zap className="h-8 w-8 text-yellow-300 mb-4" />
@@ -672,6 +704,8 @@ export default function Study() {
                       <Button className="w-full bg-white text-indigo-700 hover:bg-indigo-50 font-bold">Launch Summarizer</Button>
                     </CardContent>
                   </Card>
+                  )}
+                  {isOn("exam_prep_hub") && (
                   <Card className="border-none shadow-sm bg-slate-900 text-white">
                     <CardContent className="p-6">
                       <CheckCircle2 className="h-8 w-8 text-emerald-400 mb-4" />
@@ -680,11 +714,14 @@ export default function Study() {
                       <Button className="w-full bg-blue-600 text-white hover:bg-blue-700 font-bold">Start Practice Test</Button>
                     </CardContent>
                   </Card>
+                  )}
                 </div>
+                )}
               </div>
 
               {/* Sidebar */}
               <div className="space-y-6">
+                {isOn("academic_tools") && (
                 <Card className="border border-slate-100 shadow-sm">
                   <CardHeader className="pb-3 border-b border-slate-50">
                     <CardTitle className="text-lg font-bold">Academic Tools</CardTitle>
@@ -708,7 +745,9 @@ export default function Study() {
                     </div>
                   </CardContent>
                 </Card>
+                )}
 
+                {isOn("career_corner") && (
                 <Card className="border border-slate-100 shadow-sm">
                   <CardHeader className="pb-3 border-b border-slate-50 flex flex-row items-center justify-between">
                     <CardTitle className="text-lg font-bold">Career Corner</CardTitle>
@@ -743,6 +782,7 @@ export default function Study() {
                     ))}
                   </CardContent>
                 </Card>
+                )}
               </div>
             </div>
           </motion.div>

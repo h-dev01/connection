@@ -29,6 +29,11 @@ export const featureRegistryTable = pgTable("feature_registry", {
   defaultEnabled: boolean("default_enabled").notNull().default(true),
   forcedActive: boolean("forced_active").notNull().default(false),
   retired: boolean("retired").notNull().default(false),
+  // Global platform-wide switch — when off, feature disappears for every student everywhere.
+  globalEnabled: boolean("global_enabled").notNull().default(true),
+  // References another feature_registry.name — null for top-level features.
+  // When the parent's globalEnabled is false, all children are treated as disabled too.
+  parentName: text("parent_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

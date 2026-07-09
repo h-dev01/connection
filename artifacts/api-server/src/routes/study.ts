@@ -6,9 +6,30 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and } from "drizzle-orm";
 import { z } from "zod";
-import { db, studyMaterialsTable } from "@workspace/db";
+import { db, studyMaterialsTable, featureRegistryTable } from "@workspace/db";
 
 const router: IRouter = Router();
+
+// GET /study/feature-status — public, read-only map of featureName -> effective on/off.
+// A child feature is only "on" if both it and its parent are globalEnabled (and not retired).
+router.get("/study/feature-status", async (_req, res): Promise<void> => {
+  const rows = await db.select().from(featureRegistryTable);
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  const status: Record<string, boolean> = {};
+  for (const r of rows) {
+    if (r.retired) { status[r.name] = false; continue; }
+    let enabled = r.forcedActive || r.globalEnabled;
+    if (r.parentName) {
+      const parent = byName.get(r.parentName);
+      if (parent && !parent.retired) {
+        const parentEnabled = parent.forcedActive || parent.globalEnabled;
+        enabled = enabled && parentEnabled;
+      }
+    }
+    status[r.name] = enabled;
+  }
+  res.json(status);
+});
 
 // GET /study/materials — approved only for students
 router.get("/study/materials", async (_req, res): Promise<void> => {

@@ -41,13 +41,145 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const DEFAULT_FEATURES = [
-  { name: "academic_tools", label: "Academic Tools", description: "Smart timetable and GPA calculator", defaultEnabled: true, forcedActive: false },
-  { name: "study_hub", label: "Study Hub", description: "Study material library and uploads", defaultEnabled: true, forcedActive: false },
-  { name: "career_corner", label: "Career Corner", description: "Internship listings and resume builder", defaultEnabled: true, forcedActive: false },
-  { name: "exam_prep_hub", label: "Exam Prep Hub", description: "Past papers and exam preparation tools", defaultEnabled: true, forcedActive: false },
-  { name: "ai_summarizer", label: "AI Summarizer", description: "AI-powered document summarizer", defaultEnabled: true, forcedActive: false },
-  { name: "campus_match", label: "Campus Match", description: "Peer and roommate matching feature", defaultEnabled: false, forcedActive: false },
+  { name: "study_hub", label: "Study & Career Hub", description: "Parent container — turning this off hides the entire Study Hub and all its sub-features for every student.", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: null },
+  { name: "study_materials", label: "Study Materials", description: "Study material library, browsing and uploads", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
+  { name: "ai_summarizer", label: "AI Summarizer", description: "AI-powered document summarizer", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
+  { name: "exam_prep_hub", label: "Exam Prep Hub", description: "Past papers and exam preparation tools", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
+  { name: "academic_tools", label: "Academic Tools", description: "Smart timetable and GPA calculator", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
+  { name: "career_corner", label: "Career Corner", description: "Internship listings and resume builder", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
+  { name: "campus_match", label: "Campus Match", description: "Peer and roommate matching feature", defaultEnabled: false, forcedActive: false, globalEnabled: false, parentName: null },
 ];
+
+/* ─── Toggle switch ─────────────────────────────────────────── */
+function ToggleSwitch({ checked, onChange, disabled, color = "emerald" }: { checked: boolean; onChange: () => void; disabled?: boolean; color?: "emerald" | "blue" }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onChange}
+      className={cn(
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0",
+        disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
+        checked ? (color === "blue" ? "bg-blue-600" : "bg-emerald-500") : "bg-slate-300"
+      )}
+    >
+      <span className={cn("inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform", checked ? "translate-x-6" : "translate-x-1")} />
+    </button>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FEATURE TOGGLE PANEL (Admin Only) — master switchboard
+══════════════════════════════════════════════════════════════ */
+function FeatureToggleTab({ actorName }: { actorName: string }) {
+  const [features, setFeatures] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await fetch("/api/admin/features");
+    setFeatures(await r.json());
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const flip = async (f: any) => {
+    setBusyId(f.id);
+    await fetch(`/api/admin/features/${f.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ globalEnabled: !f.globalEnabled, actorName }),
+    });
+    await load();
+    setBusyId(null);
+  };
+
+  const parents = features.filter((f) => !f.parentName && !f.retired);
+  const childrenOf = (name: string) => features.filter((f) => f.parentName === name && !f.retired);
+
+  if (loading) return <div className="py-12 text-center text-slate-400">Loading…</div>;
+
+  if (features.length === 0) {
+    return (
+      <div className="text-center py-16 text-slate-400">
+        <Layers className="h-10 w-10 mx-auto mb-3 text-slate-200" />
+        <p>No features registered yet.</p>
+        <p className="text-sm mt-1">Seed defaults from the Feature Registry tab first.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-bold text-slate-900">Feature Toggle Panel</h2>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Master switchboard for the entire platform. Turning a feature OFF here removes it from the student
+          interface globally — including for every course and semester.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {parents.map((parent) => {
+          const kids = childrenOf(parent.name);
+          const parentOn = parent.forcedActive || parent.globalEnabled;
+          return (
+            <Card key={parent.id} className="border border-slate-200 shadow-sm bg-white overflow-hidden">
+              <div className="px-5 py-4 flex items-start gap-4 bg-slate-50/70 border-b border-slate-100">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-900">{parent.label}</span>
+                    <code className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-mono">{parent.name}</code>
+                    {parent.forcedActive && <Badge className="text-xs bg-violet-100 text-violet-700 border-violet-200">Forced Active</Badge>}
+                    {kids.length > 0 && <Badge className="text-xs bg-slate-100 text-slate-500 border-slate-200">{kids.length} sub-feature{kids.length > 1 ? "s" : ""}</Badge>}
+                  </div>
+                  {parent.description && <p className="text-xs text-slate-500 mt-1">{parent.description}</p>}
+                </div>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <span className={cn("text-xs font-semibold", parentOn ? "text-emerald-600" : "text-slate-400")}>
+                    {parentOn ? "ON" : "OFF"}
+                  </span>
+                  <ToggleSwitch checked={parentOn} disabled={parent.forcedActive || busyId === parent.id} onChange={() => flip(parent)} color="blue" />
+                </div>
+              </div>
+
+              {kids.length > 0 && (
+                <div className={cn("divide-y divide-slate-50", !parentOn && "opacity-50")}>
+                  {kids.map((child) => {
+                    const childOn = child.forcedActive || child.globalEnabled;
+                    const effectivelyOn = parentOn && childOn;
+                    return (
+                      <div key={child.id} className="pl-8 pr-5 py-3 flex items-center gap-4">
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-300 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm text-slate-800">{child.label}</span>
+                            <code className="text-[11px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded font-mono">{child.name}</code>
+                            {child.forcedActive && <Badge className="text-xs bg-violet-100 text-violet-700 border-violet-200">Forced Active</Badge>}
+                          </div>
+                          {child.description && <p className="text-xs text-slate-400 mt-0.5">{child.description}</p>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-xs font-semibold", effectivelyOn ? "text-emerald-600" : "text-slate-400")}>
+                            {!parentOn ? "Hidden" : childOn ? "ON" : "OFF"}
+                          </span>
+                          <ToggleSwitch checked={childOn} disabled={!parentOn || child.forcedActive || busyId === child.id} onChange={() => flip(child)} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /* ─── Generic helpers ───────────────────────────────────────── */
 function SectionEmpty({ label, onAdd }: { label: string; onAdd: () => void }) {
@@ -599,11 +731,12 @@ function AuditLogTab() {
 /* ══════════════════════════════════════════════════════════════
    MAIN ADMIN PAGE
 ══════════════════════════════════════════════════════════════ */
-type Tab = "overview" | "semesters" | "features" | "moderators" | "audit";
+type Tab = "overview" | "semesters" | "toggles" | "features" | "moderators" | "audit";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: Activity },
   { id: "semesters", label: "Semesters", icon: BookOpen },
+  { id: "toggles", label: "Feature Toggles", icon: ToggleRight },
   { id: "features", label: "Feature Registry", icon: Layers },
   { id: "moderators", label: "Moderators", icon: Shield },
   { id: "audit", label: "Audit Log", icon: ClipboardList },
@@ -753,6 +886,7 @@ export default function Admin() {
             )}
 
             {activeTab === "semesters" && <SemestersTab actorName={actorName} />}
+            {activeTab === "toggles" && <FeatureToggleTab actorName={actorName} />}
             {activeTab === "features" && <FeaturesTab actorName={actorName} />}
             {activeTab === "moderators" && <ModeratorsTab actorName={actorName} />}
             {activeTab === "audit" && <AuditLogTab />}
