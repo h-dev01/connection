@@ -1,12 +1,14 @@
 /**
  * Posts table — campus feed posts and anonymous Q&A.
  */
-import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { collegesTable } from "./academic";
 
 export const postsTable = pgTable("posts", {
   id: serial("id").primaryKey(),
+  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "set null" }),
   authorId: integer("author_id"),
   authorName: text("author_name"),
   authorAvatar: text("author_avatar"),
@@ -19,8 +21,14 @@ export const postsTable = pgTable("posts", {
   likes: integer("likes").notNull().default(0),
   commentsCount: integer("comments_count").notNull().default(0),
   anonymous: boolean("anonymous").notNull().default(false),
+  status: text("status").notNull().default("active"), // "active" | "hidden" | "removed"
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("posts_college_id_idx").on(t.collegeId),
+  index("posts_author_id_idx").on(t.authorId),
+  index("posts_status_idx").on(t.status),
+]);
 
 export const qaTable = pgTable("qa_questions", {
   id: serial("id").primaryKey(),

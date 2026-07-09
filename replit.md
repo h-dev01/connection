@@ -20,6 +20,23 @@ A full-stack Campus Super App for college students — study, connect, trade, an
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - Build: esbuild (CJS bundle for API), Vite (ESM bundle for frontend)
 
+## Academic hierarchy (multi-college support)
+
+Normalized master data lives in `lib/db/src/schema/academic.ts`:
+`colleges` → `courses` → `course_semesters` → `subjects` (each FK-linked,
+soft-delete via `status`/`deletedAt`). Admin CRUD for all four is in
+`artifacts/api-server/src/routes/academic.ts` (`/api/admin/colleges`,
+`/api/admin/courses`, `/api/admin/course-semesters`, `/api/admin/subjects`).
+
+Existing tables (`users`, `study_materials`, `feature_toggles`,
+`moderator_scopes`, `clubs`, `events`, `internships`, `communities`,
+`listings`, `posts`) got additive nullable FK columns (`collegeId`,
+`courseId`, `semesterId`, `subjectId`) plus `status`/`deletedAt` soft-delete
+columns, while keeping their old free-text fields (e.g. `course`,
+`semester` as text) for backward compatibility. Existing routes/frontend
+are unaffected; new features should read/write the FK columns instead of
+the legacy text ones.
+
 ## Where things live
 
 ```

@@ -8,6 +8,7 @@ import marketplaceRouter from "./marketplace";
 import clubsRouter from "./clubs";
 import statsRouter from "./stats";
 import adminRouter from "./admin";
+import academicRouter from "./academic";
 import moderatorRouter from "./moderator";
 
 const router: IRouter = Router();
@@ -15,6 +16,7 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use(authRouter);
 router.use(adminRouter);
+router.use(academicRouter);
 router.use(moderatorRouter);
 router.use(usersRouter);
 router.use(communityRouter);

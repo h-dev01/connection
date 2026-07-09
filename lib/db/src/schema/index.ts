@@ -1,3 +1,4 @@
+export * from "./academic";
 export * from "./users";
 export * from "./posts";
 export * from "./study";

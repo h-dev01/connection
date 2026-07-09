@@ -4,8 +4,9 @@
  * exam schedules, and class timetables.
  */
 import {
-  pgTable, serial, text, integer, boolean, timestamp,
+  pgTable, serial, text, integer, boolean, timestamp, index,
 } from "drizzle-orm/pg-core";
+import { collegesTable, coursesTable, courseSemestersTable } from "./academic";
 
 /* ─── Semesters ────────────────────────────────────────────── */
 export const semestersTable = pgTable("semesters", {
@@ -41,22 +42,36 @@ export const featureRegistryTable = pgTable("feature_registry", {
 export const featureTogglesTable = pgTable("feature_toggles", {
   id: serial("id").primaryKey(),
   featureName: text("feature_name").notNull(),
+  // Legacy free-text scope — kept for backward compatibility.
   course: text("course").notNull(),
   semester: text("semester").notNull(),
+  // Normalized scope. All null = platform-wide default.
+  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "cascade" }),
+  courseId: integer("course_id").references(() => coursesTable.id, { onDelete: "cascade" }),
+  semesterId: integer("semester_id").references(() => courseSemestersTable.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").notNull().default(true),
   updatedById: integer("updated_by_id"),
   updatedByName: text("updated_by_name"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("feature_toggles_scope_idx").on(t.collegeId, t.courseId, t.semesterId),
+]);
 
 /* ─── Moderator Scopes ─────────────────────────────────────── */
 export const moderatorScopesTable = pgTable("moderator_scopes", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
+  // Legacy free-text scope — kept for backward compatibility.
   course: text("course").notNull(),
   semester: text("semester").notNull(),
+  // Normalized scope.
+  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "cascade" }),
+  courseId: integer("course_id").references(() => coursesTable.id, { onDelete: "cascade" }),
+  semesterId: integer("semester_id").references(() => courseSemestersTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("moderator_scopes_user_id_idx").on(t.userId),
+]);
 
 /* ─── Exam Schedules ───────────────────────────────────────── */
 export const examSchedulesTable = pgTable("exam_schedules", {
