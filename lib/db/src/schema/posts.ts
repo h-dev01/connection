@@ -32,11 +32,18 @@ export const postsTable = pgTable("posts", {
 
 export const qaTable = pgTable("qa_questions", {
   id: serial("id").primaryKey(),
+  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "set null" }),
+  authorId: integer("author_id"),
   question: text("question").notNull(),
   upvotes: integer("upvotes").notNull().default(0),
   repliesCount: integer("replies_count").notNull().default(0),
+  status: text("status").notNull().default("active"), // "active" | "hidden" | "removed"
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("qa_questions_college_id_idx").on(t.collegeId),
+  index("qa_questions_status_idx").on(t.status),
+]);
 
 export const insertPostSchema = createInsertSchema(postsTable).omit({ id: true, createdAt: true });
 export type InsertPost = z.infer<typeof insertPostSchema>;
