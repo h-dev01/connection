@@ -63,7 +63,7 @@ const STAFF_ROLES: {
 
 /* ─── OTP input — 6 boxes ────────────────────────────────────── */
 function OtpInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const digits = value.padEnd(6, "").split("").slice(0, 6);
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
   const handleKey = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace" && !digits[i] && i > 0) {
       document.getElementById(`otp-${i - 1}`)?.focus();

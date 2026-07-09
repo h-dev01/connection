@@ -81,7 +81,7 @@ function passwordStrength(pw: string): { label: string; color: string; pct: numb
 
 /* ─── OTP boxes ───────────────────────────────────────────────── */
 function OtpInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const digits = value.padEnd(6, "").split("").slice(0, 6);
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? "");
   const handleKey = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Backspace" && !digits[i] && i > 0) {
       document.getElementById(`sotp-${i - 1}`)?.focus();
