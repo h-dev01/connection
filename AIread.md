@@ -52,9 +52,14 @@ which backend route file, and which database table power it.
 | Clubs (organizations, events, join/start) | `artifacts/college-connect/src/features/clubs/` | `clubs.ts` | `clubs`, `communities`, `events` |
 | Profile (reputation, academics, showcase) | `artifacts/college-connect/src/features/profile/` | `users.ts` | `users` |
 | Match ("Campus Match" peer/roommate finder) | `artifacts/college-connect/src/features/match/` | — (mock data only so far) | — |
-| Admin (analytics, alerts, moderation queue) | `artifacts/college-connect/src/features/admin/` | `stats.ts` | all tables (aggregated) |
-| Moderator (reports, verification, campus stats) | `artifacts/college-connect/src/features/moderator/` | `stats.ts` | all tables (aggregated) |
+| Admin (analytics, alerts, moderation queue, colleges, semesters, feature registry, moderators, audit log) | `artifacts/college-connect/src/features/admin/AdminPage.tsx` | `stats.ts` (overview), `academic.ts` (Colleges tab), `admin.ts` (Semesters/Feature Registry/Moderators/Audit Log tabs) | all tables (aggregated) + `colleges`, `courses`, `course_semesters`, `subjects`, `semesters`, `feature_registry`, `feature_toggles`, `moderator_scopes`, `audit_log` |
+| Moderator (materials approval, feature toggles, exam schedules, timetables, campus stats) | `artifacts/college-connect/src/features/moderator/` | `moderator.ts`, `stats.ts` | `study_materials`, `feature_toggles`, `exam_schedules`, `timetables` |
+| Signup / Signin (student OTP, college/email-domain validation, cascading academic dropdowns) | `artifacts/college-connect/src/features/auth/SignupPage.tsx`, `LoginPage.tsx` | `auth.ts`, `academic.ts` (public read endpoints) | `users`, `colleges`, `courses`, `course_semesters` |
 | 404 / not-found | `artifacts/college-connect/src/features/misc/` | — | — |
+
+> **Academic hierarchy is master data, not a "feature" of its own** — it's the
+> normalized `College → Course → Semester → Subject` backbone (see Section 5.1)
+> that Admin manages and that Signup/Study Hub/Feature Toggles scope themselves to.
 
 > Rule of thumb: **frontend folder name = feature name = (usually) backend route file name.**
 > The three exceptions are noted above: Career/Clubs share `clubs.ts`, Profile/Dashboard read from `users.ts`/`stats.ts`, and Admin/Moderator both read aggregate data from `stats.ts` (because those pages show overlapping cross-feature stats, not their own dedicated data).
@@ -158,6 +163,10 @@ src/
     marketplace.ts→ Marketplace feature
     clubs.ts      → Clubs + Career(internships) + Community(events)
     stats.ts      → Dashboard + Admin + Moderator aggregate stats
+    academic.ts   → College/Course/Semester/Subject hierarchy (admin CRUD + public signup reads)
+    auth.ts       → Student signup (3-step OTP) + signin (2-step OTP)
+    admin.ts      → Semesters, Feature Registry, Feature Toggles per-scope defaults, Moderators, Audit Log
+    moderator.ts  → Study material approval queue, feature toggles (moderator view), exam schedules, timetables
 ```
 
 ### Route files in detail
@@ -170,8 +179,18 @@ src/
 | `routes/marketplace.ts` | `GET /marketplace/listings`, `POST /marketplace/listings`, `DELETE /marketplace/listings/:id` | **Marketplace** |
 | `routes/clubs.ts` | fetch/join clubs, list communities/events, list internships | **Clubs**, **Career** (internships), **Community** (events) |
 | `routes/stats.ts` | aggregate CGPA/attendance summary, global usage/reports/verification counts | **Dashboard**, **Admin**, **Moderator** |
+| `routes/academic.ts` | Admin CRUD: `/admin/colleges`, `/admin/courses`, `/admin/course-semesters`, `/admin/subjects` (GET/POST/PATCH/DELETE). Public reads (no auth, active rows only, used by Signup): `GET /colleges`, `GET /colleges/:id/courses`, `GET /courses/:id/semesters` | **Admin → Colleges tab**, **Signup** (cascading dropdowns) |
+| `routes/auth.ts` | `POST /auth/signup/initiate\|complete\|resend`, `POST /auth/signin`, `/auth/signin/verify`, `/auth/signin/resend` | **Signup**, **Signin** (student OTP flow) |
+| `routes/admin.ts` | `/admin/semesters` CRUD (legacy global semester list, distinct from `course_semesters`), `/admin/features` CRUD (feature registry), `/admin/moderators` CRUD, `GET /admin/audit-log` | **Admin** (Semesters, Feature Registry, Moderators, Audit Log tabs) |
+| `routes/moderator.ts` | `/moderator/materials` (list/approve/reject/edit/delete), `/moderator/toggles` (per-scope feature enable/disable), `/moderator/exam-schedules`, `/moderator/timetables` | **Moderator** dashboard |
 
-All routes validate request bodies with Zod schemas from `lib/api-zod` before touching the database.
+All routes validate request bodies with Zod schemas from `lib/api-zod` (older routes) or inline `zod` schemas (newer routes: `academic.ts`, `auth.ts`, `admin.ts`, `moderator.ts`) before touching the database.
+
+> ⚠️ **No server-side auth/authorization exists yet.** `/api/admin/*` and
+> `/api/moderator/*` are not protected by any login/role check — access control
+> today is purely a client-side UI convention (only the Admin/Moderator page
+> calls them). Anyone who can reach the API can call these endpoints directly.
+> Treat this as a known gap, not an intentional trust boundary (see Section 9).
 
 ---
 
@@ -186,8 +205,51 @@ Drizzle ORM schema, PostgreSQL. `index.ts` exports the `db` client plus every ta
 | `schema/study.ts` | `study_materials` | `subject`, `course`, `semester`, `fileType`, `downloads`, `verified` | Study Hub |
 | `schema/marketplace.ts` | `listings` | `listingType`, `price`, `sellerName`, `featured` | Marketplace |
 | `schema/clubs.ts` | `clubs`, `communities`, `events`, `internships` | `memberCount`, event dates, internship postings | Clubs, Career, Community |
+| `schema/academic.ts` | `colleges`, `courses`, `course_semesters`, `subjects` | see Section 5.1 | Admin (Colleges tab), Signup |
+| `schema/admin.ts` | `semesters` (legacy, global), `feature_registry`, `feature_toggles`, `moderator_scopes`, `exam_schedules`, `timetables`, `audit_log` | see Section 5.2 | Admin, Moderator |
 
 `drizzle.config.ts` configures schema push (`pnpm --filter @workspace/db run push`) against `DATABASE_URL`.
+
+### 5.1 Academic hierarchy — `College → Course → Semester → Subject`
+
+This is the normalized master-data backbone that lets the platform host many
+colleges without schema changes (adding a college is an INSERT, not a
+migration). Every table below has `status` ("active"/"disabled") + `deletedAt`
+for soft delete — nothing is hard-deleted in normal operation.
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `colleges` | `name`, `code` (unique), `slug` (unique), `emailDomain` (unique — e.g. `"dit.edu"`), `city`, `state`, `pincode`, `logoUrl` | `emailDomain` gates student signup: only `@<emailDomain>` addresses may register for that college. |
+| `courses` | `collegeId` (FK), `name`, `code`, `durationSemesters` (default 8) | The "how many semesters does this course have" field admins set when creating a course. |
+| `course_semesters` | `courseId` (FK), `number`, `name`, `startDate`, `endDate`, `status` ("active"\|"upcoming"\|"disabled"\|"archived") | Admin can add these one at a time or bulk-generate up to `durationSemesters` via the "Generate Remaining" button in Admin → Colleges → Courses → Semesters. |
+| `subjects` | `semesterId` (FK), `name`, `code`, `credits` | Leaf level of the hierarchy. |
+
+`users` has nullable FK columns `collegeId`, `courseId`, `semesterId` pointing into
+this hierarchy (added during rollout; legacy free-text `college`/`courseName`
+columns are kept in parallel for backward compatibility with old rows/UI).
+`feature_toggles` also has nullable `collegeId`/`courseId`/`semesterId` for
+scoping a feature on/off to a specific college, course, or semester (all-null =
+platform-wide default).
+
+**Signup enforcement:** `POST /api/auth/signup/initiate` (in `routes/auth.ts`)
+requires `collegeId`/`courseId`/`semesterId` — not free-text names — and
+validates server-side that (a) the college is active, (b) the submitted
+email's domain matches that college's `emailDomain`, (c) the course belongs
+to that college, and (d) the semester belongs to that course and is
+active/upcoming. The frontend (`SignupPage.tsx`) presents this as three
+cascading dropdowns (college → course → semester), each fetched from the
+public `GET /api/colleges`, `GET /api/colleges/:id/courses`,
+`GET /api/courses/:id/semesters` endpoints (active rows only, no auth).
+
+### 5.2 Admin/Moderator operational tables
+
+| Table | Purpose |
+|---|---|
+| `semesters` | Legacy **global** semester list (e.g. `"sem5"`) used by the Admin "Semesters" tab — distinct from the newer per-course `course_semesters` table above. Not yet consolidated. |
+| `feature_registry` | Master list of toggleable features (e.g. `"study_hub"`), with `defaultEnabled`, `forcedActive`, `retired`, `globalEnabled` (platform kill-switch), and optional `parentName` for nested features. |
+| `feature_toggles` | Per-scope enable/disable rows referencing `feature_registry.name` + college/course/semester scope (or legacy free-text `course`/`semester` scope). Read by Moderator dashboard and (eventually) by feature pages to decide visibility. |
+| `moderator_scopes`, `exam_schedules`, `timetables` | Moderator-managed content scoped to a college/course/semester. |
+| `audit_log` | Append-only log of admin/moderator actions (create/update/delete), read via `GET /api/admin/audit-log`. |
 
 ---
 
@@ -224,8 +286,11 @@ Example — "let students comment on posts" (a Community feature change):
 
 ## 9. Known gotchas (see also `replit.md`)
 
-- Auth is not fully wired to the backend yet — Login currently just navigates to the role's home page; `AuthContext` handles this client-side only.
-- OpenAPI codegen (Orval) is bypassed due to a YAML parsing issue — routes use manual Zod validation for now.
+- **No server-side admin/moderator authorization.** `/api/admin/*` and `/api/moderator/*` accept requests from anyone — there's no session/JWT/role check on the backend. The Admin/Moderator pages are reachable by any logged-in-looking client. Student signin/signup *does* do real OTP + password verification, but admin/moderator "login" is a client-side demo-credentials check in `AuthContext.tsx`, not a real session. Before this goes to real users, add auth middleware (session or JWT) enforcing role on every `/admin` and `/moderator` route.
+- OpenAPI codegen (Orval) is bypassed due to a YAML parsing issue — routes use manual Zod validation for now (all newer routes — `academic.ts`, `auth.ts`, `admin.ts`, `moderator.ts` — were written with inline `zod` schemas rather than `lib/api-zod`, so the OpenAPI spec in `lib/api-spec` is now out of date and doesn't describe them).
+- OTP codes are stored **in-memory** in `auth.ts` (a `Map`, 5-minute TTL) and returned directly in the API response as `demoOtp` instead of being emailed — fine for a demo, but OTPs are lost on server restart and never actually delivered to the user's inbox. Needs a real email/SMS provider + a persistent (Redis/DB) OTP store before production use.
+- Two parallel "semester" concepts exist: the legacy global `semesters` table (Admin → Semesters tab, free-standing "sem5" style rows) and the newer per-course `course_semesters` table (Admin → Colleges → Courses → Semesters, used by Signup). They are not linked or reconciled — don't assume editing one affects the other.
+- `subjects`, `course_semesters`, and `courses` have no public list/search endpoints beyond the ones Signup needs (active-only, minimal fields) — anything else (e.g. showing subjects in Study Hub) needs a new endpoint, not reuse of the admin CRUD ones (those return soft-deleted/disabled rows too).
 - Do not run `pnpm dev` at the workspace root — use the Replit workflow or `pnpm --filter <package> run dev`.
-- Most feature-page data is mock data at the top of each page file — check JSDoc comments before assuming it's live from the API.
-- Backend route file naming mostly mirrors frontend feature folder names, with 3 intentional exceptions (see the note under the Feature Map table).
+- Most feature-page data is mock data at the top of each page file — check JSDoc comments before assuming it's live from the API. Study Hub, Marketplace, Community, Auth (signup/signin), and Admin's Colleges/Semesters/Feature Registry/Moderators/Audit Log tabs are live; most other feature pages (Career, Clubs, Match, Profile, Dashboard) are still mock data.
+- Backend route file naming mostly mirrors frontend feature folder names, with 3 intentional exceptions (see the note under the Feature Map table); `academic.ts`, `auth.ts`, `admin.ts`, and `moderator.ts` are further exceptions — they're operational/cross-cutting routers rather than 1:1 feature mirrors.
