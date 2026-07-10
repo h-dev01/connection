@@ -238,6 +238,301 @@ populated production data).
 | `schema/academic.ts` | `colleges`, `courses`, `course_semesters`, `subjects` | see Section 5.1 | Admin (Colleges tab), Signup |
 | `schema/admin.ts` | `semesters` (legacy, global), `feature_registry`, `feature_toggles`, `moderator_scopes`, `exam_schedules`, `class_timetables`, `audit_log` | see Section 5.2 | Admin, Moderator |
 
+### 5.0 📋 Full table-by-table column reference (exact — copy/paste ready)
+
+This is the ground truth for every column, type, default, constraint, FK, and
+index in the database, straight from the Drizzle schema files. Use this section
+when writing a migration, a new query, or a Zod schema — it should match
+`lib/db/src/schema/*.ts` exactly; if it ever looks out of date, the `.ts` file
+wins (re-sync this table).
+
+Legend: **PK** = primary key, **FK→table.col** = foreign key, **U** = unique,
+**NN** = not null, `deletedAt` present = soft-delete table (never hard-deleted
+in normal operation).
+
+#### `users` (`schema/users.ts`)
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | serial | PK | |
+| `name` | text | NN | |
+| `email` | text | NN, U | lowercased before insert by `auth.ts` |
+| `passwordHash` | text | nullable | bcrypt hash; null for admin/mod (they never hit the DB — see Section 9) |
+| `college` | text | NN, default `""` | **legacy** free-text, kept for back-compat |
+| `department` | text | NN, default `""` | **legacy** free-text |
+| `courseName` | text | nullable | **legacy** free-text |
+| `collegeId` | integer | FK→`colleges.id` (`ON DELETE SET NULL`) | normalized, nullable during rollout |
+| `courseId` | integer | FK→`courses.id` (`ON DELETE SET NULL`) | normalized, nullable during rollout |
+| `semesterId` | integer | FK→`course_semesters.id` (`ON DELETE SET NULL`) | normalized, nullable during rollout |
+| `passInYear` | integer | nullable | |
+| `passOutYear` | integer | nullable | |
+| `year` | integer | NN, default `1` | year of study |
+| `bio` | text | nullable | |
+| `avatarUrl` | text | nullable | |
+| `role` | text | NN, default `"student"` | `"student"` \| `"low_admin"` \| `"admin"` |
+| `reputationScore` | integer | NN, default `0` | |
+| `reputationLevel` | text | NN, default `"bronze"` | |
+| `verified` | boolean | NN, default `false` | |
+| `cgpa` | real | nullable | |
+| `attendance` | real | nullable | |
+| `status` | text | NN, default `"active"` | `"active"` \| `"suspended"` \| `"disabled"` |
+| `deletedAt` | timestamptz | nullable | soft delete |
+| `createdAt` | timestamptz | NN, default now | |
+| `updatedAt` | timestamptz | NN, default now, auto-updates on write | |
+| **Indexes** | | | `users_college_id_idx`, `users_course_id_idx`, `users_semester_id_idx`, `users_role_idx`, `users_status_idx` |
+
+#### `posts` (`schema/posts.ts`)
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | serial | PK | |
+| `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable |
+| `authorId` | integer | nullable | **not** an FK constraint in the schema (plain integer) |
+| `authorName` | text | nullable | |
+| `authorAvatar` | text | nullable | |
+| `authorDept` | text | nullable | |
+| `authorLevel` | text | nullable | |
+| `content` | text | NN | |
+| `imageUrl` | text | nullable | |
+| `category` | text | NN, default `"campus_life"` | `academics`\|`events`\|`campus_life`\|`entertainment`\|`announcement` |
+| `likes` | integer | NN, default `0` | |
+| `commentsCount` | integer | NN, default `0` | no `comments` table exists yet — see Section 9 |
+| `anonymous` | boolean | NN, default `false` | |
+| `status` | text | NN, default `"active"` | `"active"` \| `"hidden"` \| `"removed"` |
+| `deletedAt` | timestamptz | nullable | soft delete |
+| `createdAt` | timestamptz | NN, default now | |
+| **Indexes** | | | `posts_college_id_idx`, `posts_author_id_idx`, `posts_status_idx` |
+
+#### `qa_questions` (`schema/posts.ts`)
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | serial | PK | |
+| `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable |
+| `authorId` | integer | nullable | plain integer, not FK-constrained |
+| `question` | text | NN | |
+| `upvotes` | integer | NN, default `0` | |
+| `repliesCount` | integer | NN, default `0` | |
+| `status` | text | NN, default `"active"` | `"active"` \| `"hidden"` \| `"removed"` |
+| `deletedAt` | timestamptz | nullable | soft delete |
+| `createdAt` | timestamptz | NN, default now | |
+| **Indexes** | | | `qa_questions_college_id_idx`, `qa_questions_status_idx` |
+
+#### `study_materials` (`schema/study.ts`)
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | serial | PK | |
+| `title` | text | NN | |
+| `subject` | text | NN | **legacy** free-text |
+| `course` | text | NN | **legacy** free-text |
+| `semester` | text | NN | **legacy** free-text |
+| `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | normalized, nullable |
+| `courseId` | integer | FK→`courses.id` (`SET NULL`) | normalized, nullable |
+| `semesterId` | integer | FK→`course_semesters.id` (`SET NULL`) | normalized, nullable |
+| `subjectId` | integer | FK→`subjects.id` (`SET NULL`) | normalized, nullable |
+| `fileType` | text | NN, default `"pdf"` | |
+| `fileSizeMb` | real | NN, default `0` | |
+| `downloads` | integer | NN, default `0` | |
+| `rating` | real | NN, default `0` | |
+| `ratingCount` | integer | NN, default `0` | |
+| `verified` | boolean | NN, default `false` | legacy flag, superseded by `status` below |
+| `status` | text | NN, default `"pending"` | `"pending"` → `"approved"` \| `"rejected"` |
+| `rejectionReason` | text | nullable | |
+| `approvedBy` | text | nullable | |
+| `rejectedBy` | text | nullable | |
+| `reviewedAt` | timestamptz | nullable | |
+| `uploadedBy` | text | NN | |
+| `sharedWith` | text | nullable | |
+| `createdAt` | timestamptz | NN, default now | |
+| **Indexes** | | | `study_materials_college_id_idx`, `study_materials_subject_id_idx`, `study_materials_status_idx` |
+
+#### `listings` (`schema/marketplace.ts`)
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| `id` | serial | PK | |
+| `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable |
+| `sellerId` | integer | FK→`users.id` (`SET NULL`) | nullable |
+| `title` | text | NN | |
+| `description` | text | nullable | |
+| `price` | real | NN | |
+| `priceUnit` | text | NN, default `""` | e.g. `"/month"` |
+| `category` | text | NN | |
+| `listingType` | text | NN, default `"buy_sell"` | `"buy_sell"` \| `"housing"` \| `"service"` |
+| `imageUrl` | text | nullable | |
+| `sellerName` | text | NN | |
+| `sellerRating` | real | NN, default `0` | |
+| `sellerVerified` | boolean | NN, default `false` | |
+| `location` | text | nullable | |
+| `condition` | text | nullable | |
+| `featured` | boolean | NN, default `false` | |
+| `status` | text | NN, default `"active"` | `"active"` \| `"sold"` \| `"disabled"` |
+| `deletedAt` | timestamptz | nullable | soft delete |
+| `createdAt` | timestamptz | NN, default now | |
+| **Indexes** | | | `listings_college_id_idx`, `listings_seller_id_idx`, `listings_status_idx` |
+
+#### `clubs` / `communities` / `events` / `internships` (`schema/clubs.ts`)
+| Table | Column | Type | Constraints | Notes |
+|---|---|---|---|---|
+| `clubs` | `id` | serial | PK | |
+| `clubs` | `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable = cross-college club |
+| `clubs` | `name` | text | NN | |
+| `clubs` | `description` | text | NN | |
+| `clubs` | `category` | text | NN | |
+| `clubs` | `memberCount` | integer | NN, default `0` | |
+| `clubs` | `official` | boolean | NN, default `false` | |
+| `clubs` | `trending` | boolean | NN, default `false` | |
+| `clubs` | `imageUrl` | text | nullable | |
+| `clubs` | `badge` | text | nullable | |
+| `clubs` | `nextEvent` | text | nullable | |
+| `clubs` | `nextEventDate` | text | nullable | |
+| `clubs` | `status` | text | NN, default `"active"` | `"active"` \| `"disabled"` |
+| `clubs` | `deletedAt` | timestamptz | nullable | soft delete |
+| `clubs` | `createdAt` | timestamptz | NN, default now | |
+| `communities` | `id` | serial | PK | |
+| `communities` | `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable |
+| `communities` | `name` | text | NN | |
+| `communities` | `memberCount` | integer | NN, default `0` | |
+| `communities` | `icon` | text | NN | |
+| `communities` | `color` | text | NN, default `"#3b82f6"` | |
+| `communities` | `status` | text | NN, default `"active"` | |
+| `communities` | `deletedAt` | timestamptz | nullable | soft delete; **note: no `createdAt` column on this table** |
+| `events` | `id` | serial | PK | |
+| `events` | `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable |
+| `events` | `title` | text | NN | |
+| `events` | `date` | text | NN | plain text, not a real date type |
+| `events` | `time` | text | NN | |
+| `events` | `venue` | text | NN | |
+| `events` | `organizer` | text | NN | |
+| `events` | `status` | text | NN, default `"upcoming"` | `upcoming`\|`approved`\|`pending`\|`cancelled` |
+| `events` | `deletedAt` | timestamptz | nullable | soft delete |
+| `events` | `createdAt` | timestamptz | NN, default now | |
+| `internships` | `id` | serial | PK | |
+| `internships` | `collegeId` | integer | FK→`colleges.id` (`SET NULL`) | nullable |
+| `internships` | `title` | text | NN | |
+| `internships` | `company` | text | NN | |
+| `internships` | `location` | text | NN | |
+| `internships` | `salary` | text | NN | plain text, e.g. `"$1500/mo"` |
+| `internships` | `status` | text | NN, default `"open"` | `"open"` \| `"closed"` |
+| `internships` | `logoUrl` | text | nullable | |
+| `internships` | `isNew` | boolean | NN, default `false` | |
+| `internships` | `deletedAt` | timestamptz | nullable | soft delete |
+| `internships` | `createdAt` | timestamptz | NN, default now | |
+| **Indexes** | | | | `clubs_college_id_idx`, `clubs_status_idx`, `communities_college_id_idx`, `events_college_id_idx`, `events_status_idx`, `internships_college_id_idx`, `internships_status_idx` |
+
+#### `colleges` / `courses` / `course_semesters` / `subjects` (`schema/academic.ts`) — see Section 5.1 for the narrative version
+| Table | Column | Type | Constraints | Notes |
+|---|---|---|---|---|
+| `colleges` | `id` | serial | PK | |
+| `colleges` | `name` | text | NN | |
+| `colleges` | `code` | text | NN, U | e.g. `"MIT01"` |
+| `colleges` | `slug` | text | NN, U | e.g. `"mit-college"`, auto-slugified from `name` if omitted on create |
+| `colleges` | `emailDomain` | text | NN, U | e.g. `"dit.edu"` — gates signup |
+| `colleges` | `city` | text | nullable | |
+| `colleges` | `state` | text | nullable | |
+| `colleges` | `pincode` | text | nullable | |
+| `colleges` | `logoUrl` | text | nullable | |
+| `colleges` | `status` | text | NN, default `"active"` | `"active"` \| `"disabled"` |
+| `colleges` | `deletedAt` | timestamptz | nullable | soft delete |
+| `colleges` | `createdAt` | timestamptz | NN, default now | |
+| `colleges` | `updatedAt` | timestamptz | NN, default now, auto-updates | |
+| `courses` | `id` | serial | PK | |
+| `courses` | `collegeId` | integer | **NN**, FK→`colleges.id` (`ON DELETE RESTRICT`) | can't delete a college with courses still pointing at it |
+| `courses` | `name` | text | NN | e.g. `"B.Tech Computer Science"` |
+| `courses` | `code` | text | NN | e.g. `"CSE"` — unique **per college**, not globally |
+| `courses` | `durationSemesters` | integer | NN, default `8` | drives "Generate Remaining" bulk-create |
+| `courses` | `status` | text | NN, default `"active"` | `"active"` \| `"disabled"` |
+| `courses` | `deletedAt` | timestamptz | nullable | soft delete |
+| `courses` | `createdAt` / `updatedAt` | timestamptz | NN, default now (updatedAt auto-updates) | |
+| `course_semesters` | `id` | serial | PK | |
+| `course_semesters` | `courseId` | integer | **NN**, FK→`courses.id` (`ON DELETE RESTRICT`) | |
+| `course_semesters` | `number` | integer | NN | `1..durationSemesters`, unique **per course** |
+| `course_semesters` | `name` | text | NN | e.g. `"Semester 5"` |
+| `course_semesters` | `startDate` / `endDate` | text | nullable | plain text, not a real date type |
+| `course_semesters` | `status` | text | NN, default `"upcoming"` | `"active"`\|`"disabled"`\|`"upcoming"`\|`"archived"` |
+| `course_semesters` | `deletedAt` | timestamptz | nullable | soft delete |
+| `course_semesters` | `createdAt` / `updatedAt` | timestamptz | NN, default now (updatedAt auto-updates) | |
+| `subjects` | `id` | serial | PK | |
+| `subjects` | `semesterId` | integer | **NN**, FK→`course_semesters.id` (`ON DELETE RESTRICT`) | |
+| `subjects` | `name` | text | NN | e.g. `"Data Structures & Algorithms"` |
+| `subjects` | `code` | text | NN | e.g. `"CS301"` — unique **per semester** |
+| `subjects` | `credits` | integer | NN, default `3` | |
+| `subjects` | `status` | text | NN, default `"active"` | `"active"` \| `"disabled"` |
+| `subjects` | `deletedAt` | timestamptz | nullable | soft delete |
+| `subjects` | `createdAt` / `updatedAt` | timestamptz | NN, default now (updatedAt auto-updates) | |
+| **Unique indexes** | | | | `courses_college_code_idx` (collegeId+code), `course_semesters_course_number_idx` (courseId+number), `subjects_semester_code_idx` (semesterId+code) |
+| **Other indexes** | | | | `colleges_status_idx`, `courses_college_id_idx`, `courses_status_idx`, `course_semesters_course_id_idx`, `course_semesters_status_idx`, `subjects_semester_id_idx`, `subjects_status_idx` |
+
+> ⚠️ Note the `ON DELETE RESTRICT` on `courses.collegeId`, `course_semesters.courseId`,
+> and `subjects.semesterId` — Postgres will **reject** a hard delete of a parent
+> row if children exist. This is why Admin "delete" always does a soft delete
+> (`status="disabled"` + `deletedAt`) instead of a real `DELETE` for these four
+> tables — a real delete would usually fail once any course/semester/subject
+> has been added underneath it.
+
+#### `semesters` (legacy, global) / `feature_registry` / `feature_toggles` / `moderator_scopes` / `exam_schedules` / `class_timetables` / `audit_log` (`schema/admin.ts`)
+| Table | Column | Type | Constraints | Notes |
+|---|---|---|---|---|
+| `semesters` | `id` | serial | PK | |
+| `semesters` | `name` | text | NN | e.g. `"Semester 5"` |
+| `semesters` | `code` | text | NN, U | e.g. `"sem5"` |
+| `semesters` | `startDate` / `endDate` | text | nullable | |
+| `semesters` | `status` | text | NN, default `"upcoming"` | `"active"` \| `"archived"` \| `"upcoming"` |
+| `semesters` | `createdAt` / `updatedAt` | timestamptz | NN, default now | **`updatedAt` does not auto-update** (set manually in `admin.ts`'s PATCH handler) |
+| `feature_registry` | `id` | serial | PK | |
+| `feature_registry` | `name` | text | NN, U | internal key, e.g. `"study_hub"` |
+| `feature_registry` | `label` | text | NN | display label |
+| `feature_registry` | `description` | text | nullable | |
+| `feature_registry` | `defaultEnabled` | boolean | NN, default `true` | fallback when no toggle row exists for a scope |
+| `feature_registry` | `forcedActive` | boolean | NN, default `false` | moderators cannot disable it (403 if attempted) |
+| `feature_registry` | `retired` | boolean | NN, default `false` | soft-hidden from Moderator UI |
+| `feature_registry` | `globalEnabled` | boolean | NN, default `true` | platform-wide kill switch |
+| `feature_registry` | `parentName` | text | nullable | references another row's `name`; null = top-level |
+| `feature_registry` | `createdAt` | timestamptz | NN, default now | |
+| `feature_toggles` | `id` | serial | PK | |
+| `feature_toggles` | `featureName` | text | NN | references `feature_registry.name` (not FK-constrained) |
+| `feature_toggles` | `course` / `semester` | text | NN | **legacy** free-text scope — this is what all current read/write paths actually use |
+| `feature_toggles` | `collegeId` | integer | FK→`colleges.id` (`CASCADE`) | normalized scope, **unused by current routes** |
+| `feature_toggles` | `courseId` | integer | FK→`courses.id` (`CASCADE`) | normalized scope, **unused by current routes** |
+| `feature_toggles` | `semesterId` | integer | FK→`course_semesters.id` (`CASCADE`) | normalized scope, **unused by current routes** |
+| `feature_toggles` | `enabled` | boolean | NN, default `true` | |
+| `feature_toggles` | `updatedById` | integer | nullable | not FK-constrained |
+| `feature_toggles` | `updatedByName` | text | nullable | |
+| `feature_toggles` | `updatedAt` | timestamptz | NN, default now | set manually on every PATCH |
+| `moderator_scopes` | `id` | serial | PK | |
+| `moderator_scopes` | `userId` | integer | NN | not FK-constrained (should reference `users.id`) |
+| `moderator_scopes` | `course` / `semester` | text | NN | **legacy** free-text — what's actually used |
+| `moderator_scopes` | `collegeId`/`courseId`/`semesterId` | integer | FK→respective tables (`CASCADE`) | normalized scope, **unused by current routes** |
+| `moderator_scopes` | `createdAt` | timestamptz | NN, default now | |
+| `exam_schedules` | `id` | serial | PK | |
+| `exam_schedules` | `title` | text | NN | |
+| `exam_schedules` | `course` / `semester` | text | NN | free-text scope |
+| `exam_schedules` | `examSession` | text | NN | e.g. `"End-Semester Dec 2025"` |
+| `exam_schedules` | `dateFrom` / `dateTo` | text | nullable | plain text |
+| `exam_schedules` | `fileUrl` | text | nullable | no storage integration behind this — plain URL string |
+| `exam_schedules` | `description` | text | nullable | |
+| `exam_schedules` | `uploaderName` | text | nullable | |
+| `exam_schedules` | `uploadedById` | integer | nullable | not FK-constrained |
+| `exam_schedules` | `createdAt` / `updatedAt` | timestamptz | NN, default now | `updatedAt` set manually |
+| `class_timetables` | `id` | serial | PK | |
+| `class_timetables` | `title` | text | NN | |
+| `class_timetables` | `course` / `semester` | text | NN | free-text scope |
+| `class_timetables` | `section` | text | NN | e.g. `"Section A"` |
+| `class_timetables` | `effectiveFrom` / `effectiveTo` | text | nullable | plain text |
+| `class_timetables` | `fileUrl` | text | nullable | no storage integration |
+| `class_timetables` | `description` | text | nullable | |
+| `class_timetables` | `uploaderName` | text | nullable | |
+| `class_timetables` | `uploadedById` | integer | nullable | not FK-constrained |
+| `class_timetables` | `createdAt` / `updatedAt` | timestamptz | NN, default now | `updatedAt` set manually |
+| `audit_log` | `id` | serial | PK | |
+| `audit_log` | `actorId` | integer | nullable | not FK-constrained |
+| `audit_log` | `actorName` | text | NN | |
+| `audit_log` | `actorRole` | text | NN | |
+| `audit_log` | `action` | text | NN | e.g. `"create_college"`, `"toggle_feature"`, `"update_moderator"` |
+| `audit_log` | `entityType` | text | NN | e.g. `"college"`, `"feature"`, `"user"` |
+| `audit_log` | `entityId` | text | nullable | |
+| `audit_log` | `entityLabel` | text | nullable | |
+| `audit_log` | `beforeState` / `afterState` | text | nullable | raw strings, not structured diffs |
+| `audit_log` | `scope` | text | nullable | e.g. `"CS301 × Semester 5"` |
+| `audit_log` | `createdAt` | timestamptz | NN, default now | |
+| **Indexes** | | | | `feature_toggles_scope_idx` (collegeId, courseId, semesterId), `moderator_scopes_user_id_idx` |
+
 ### 5.1 Academic hierarchy — `College → Course → Semester → Subject`
 
 This is the normalized master-data backbone that lets the platform host many
