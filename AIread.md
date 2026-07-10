@@ -634,6 +634,100 @@ Example — "let admins scope a feature toggle to a specific college/course/seme
 
 ---
 
+## 9.5 📝 Changelog — every project change so far
+
+A running log of what changed, in what file(s), and why — newest first.
+**Whenever you (an AI agent) make a change to the database schema or edit a
+file in a way another AI reading this doc later would need to know about,
+add a new entry at the top of this list** in the same format: date, one-line
+summary, then bullet points naming the exact file(s)/table(s)/column(s)
+touched and what changed. Keep entries factual and short — this is a log, not
+a narrative; the "why" belongs in one clause, not a paragraph.
+
+- **2026-07-10 — Full documentation pass on AIread.md (no code/schema changes)**
+  - `AIread.md`: added Section 5.0 (exact column-by-column reference for
+    every DB table), Section 10 (full file index — one line per source file
+    across frontend/backend/`lib/*`), and this changelog section (9.5).
+    Rewrote Section 4 route tables and Section 9 gotchas list for accuracy.
+    No application code or database schema was changed in this pass.
+
+- **2026-07-10 — Seeded default feature-registry rows (data fix, no schema change)**
+  - `feature_registry` table: inserted 6 rows via `POST /api/admin/features`
+    (`study_hub`, `marketplace`, `community`, `career`, `clubs`,
+    `campus_match`) — the table was empty, which made the Moderator "Feature
+    Toggles" tab show "No features registered yet." and look broken. No code
+    changed; this was pure data seeding.
+
+- **2026-07-10 — College email-domain-gated signup + cascading dropdowns**
+  - `lib/db/src/schema/academic.ts`: added `emailDomain` (unique) and
+    `pincode` columns to `colleges`.
+  - `artifacts/api-server/src/routes/auth.ts`: signup now validates the
+    submitted email's domain against `colleges.emailDomain` before creating
+    an OTP.
+  - `artifacts/api-server/src/routes/academic.ts`: added public
+    read-only endpoints for colleges/courses/course-semesters so the signup
+    form can populate cascading dropdowns without needing admin auth.
+  - `artifacts/college-connect/src/features/auth/SignupPage.tsx`: replaced
+    free-text college/course/semester fields with cascading dropdowns
+    (`CollegeCombobox` + dependent Course/Semester selects) wired to the new
+    endpoints.
+
+- **2026-07-10 — Multi-college academic hierarchy (colleges → courses → course_semesters → subjects)**
+  - `lib/db/src/schema/academic.ts` (new file): added `collegesTable`,
+    `coursesTable`, `courseSemestersTable`, `subjectsTable` — normalized,
+    FK-linked, soft-deletable (`status` + `deletedAt`) hierarchy.
+  - `lib/db/src/schema/users.ts`, `study.ts`: added nullable
+    `collegeId`/`courseId`/`semesterId` (and `subjectId` on
+    `study_materials`) FK columns alongside the existing legacy free-text
+    fields, for backward compatibility during rollout.
+  - `lib/db/src/schema/posts.ts`, `marketplace.ts`, `clubs.ts`: added
+    nullable `collegeId` FK column to `posts`, `qa_questions`, `listings`,
+    `clubs`, `communities`, `events`, `internships` to scope content per
+    college.
+  - `artifacts/api-server/src/routes/academic.ts` (new file): full admin
+    CRUD for colleges/courses/course-semesters/subjects, with a
+    `writeAudit()` helper and a "Generate Remaining Semesters" bulk-create
+    endpoint.
+  - `artifacts/college-connect/src/features/admin/AdminPage.tsx`: added the
+    nested Colleges → Courses → Semesters → Subjects drill-down UI
+    (`CollegesTab` → `CollegeCoursesPanel` → `CourseSemestersPanel` →
+    `SubjectsPanel`).
+
+- **2026-07-10 — Admin + Moderator dashboards (DB-backed)**
+  - `lib/db/src/schema/admin.ts` (new file): added `semestersTable`
+    (legacy, global), `featureRegistryTable`, `featureTogglesTable`,
+    `moderatorScopesTable`, `examSchedulesTable`, `classTimetablesTable`,
+    `auditLogTable`.
+  - `artifacts/api-server/src/routes/admin.ts` (new file): CRUD for legacy
+    semesters, feature registry, moderator accounts; audit-log read.
+  - `artifacts/api-server/src/routes/moderator.ts` (new file): study
+    material approve/reject queue, per-scope feature-toggle upsert,
+    exam-schedule/timetable CRUD.
+  - `artifacts/college-connect/src/features/admin/AdminPage.tsx`,
+    `features/moderator/ModeratorPage.tsx` (new files): built out both
+    dashboards end-to-end against the routes above.
+  - Ordering note preserved from that work: Admin must seed features in
+    `feature_registry` before Moderators have anything to toggle per scope.
+
+- **2026-07-10 — Study materials approval flow**
+  - `lib/db/src/schema/study.ts`: replaced the old `verified: boolean` flag
+    on `study_materials` with a `status` text field
+    (`"pending"` → `"approved"` | `"rejected"`), plus `rejectionReason`,
+    `approvedBy`, `rejectedBy`, `reviewedAt`.
+  - `artifacts/api-server/src/routes/study.ts`: student-facing `GET`
+    endpoint now filters to `status = "approved"` only; new materials are
+    created as `"pending"`.
+  - `artifacts/api-server/src/routes/moderator.ts`: added
+    approve/reject actions that set `status` + the audit columns above.
+
+> Earlier history (initial project scaffold — base schema for `users`,
+> `posts`, `qa_questions`, `study_materials`, `listings`, `clubs`,
+> `communities`, `events`, `internships`; base routes; base frontend pages)
+> predates this changelog's introduction and is fully captured by Sections
+> 3–8 as the current-state description, so it isn't repeated here.
+
+---
+
 ## 10. 🗂️ Full File Index — every source file, one line each
 
 Every non-generated, non-`node_modules` source file in the repo. Use this when
