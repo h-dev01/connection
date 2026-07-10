@@ -26,8 +26,11 @@ export const collegesTable = pgTable("colleges", {
   name: text("name").notNull(),
   code: text("code").notNull().unique(),   // short code, e.g. "MIT01"
   slug: text("slug").notNull().unique(),   // url-safe, e.g. "mit-college"
+  // Email domain used to validate student signups, e.g. "dit.edu" for @dit.edu addresses.
+  emailDomain: text("email_domain").notNull().unique(),
   city: text("city"),
   state: text("state"),
+  pincode: text("pincode"),
   logoUrl: text("logo_url"),
   status: text("status").notNull().default("active"), // "active" | "disabled"
   deletedAt: timestamp("deleted_at", { withTimezone: true }),

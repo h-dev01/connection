@@ -7,10 +7,10 @@
  * Security note: signin never reveals whether an email is registered.
  */
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, isNull, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, collegesTable, coursesTable, courseSemestersTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -53,8 +53,11 @@ interface SignupPayload {
   name: string;
   email: string;
   passwordHash: string;
-  college: string;
+  collegeId: number;
+  collegeName: string;
+  courseId: number;
   courseName: string;
+  semesterId: number;
   passInYear: number;
   passOutYear: number;
 }
@@ -63,8 +66,9 @@ const SignupInitiateSchema = z.object({
   name: z.string().min(2, "Full name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  college: z.string().min(1, "College name is required"),
-  courseName: z.string().min(1, "Course name is required"),
+  collegeId: z.number().int("Please select your college"),
+  courseId: z.number().int("Please select your course"),
+  semesterId: z.number().int("Please select your current semester"),
   passInYear: z.number().int().min(1990).max(2030),
   passOutYear: z.number().int().min(1990).max(2035),
 }).refine(d => d.passOutYear >= d.passInYear, {
@@ -95,18 +99,50 @@ router.post("/auth/signup/initiate", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid input" });
     return;
   }
-  const { name, email, password, college, courseName, passInYear, passOutYear } = parsed.data;
+  const { name, email, password, collegeId, courseId, semesterId, passInYear, passOutYear } = parsed.data;
+  const lowerEmail = email.toLowerCase();
 
   // Check if email already registered
-  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email.toLowerCase()));
+  const [existing] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, lowerEmail));
   if (existing) {
     res.status(409).json({ error: "An account with this email already exists. Please sign in." });
     return;
   }
 
+  // College must exist and be active — its emailDomain gates which addresses may sign up
+  const [college] = await db.select().from(collegesTable)
+    .where(and(eq(collegesTable.id, collegeId), isNull(collegesTable.deletedAt), eq(collegesTable.status, "active")));
+  if (!college) { res.status(400).json({ error: "Selected college was not found." }); return; }
+
+  const emailDomain = lowerEmail.split("@")[1];
+  if (emailDomain !== college.emailDomain.toLowerCase()) {
+    res.status(400).json({ error: `Use your college email ending in @${college.emailDomain} to sign up for ${college.name}.` });
+    return;
+  }
+
+  // Course must belong to the selected college
+  const [course] = await db.select().from(coursesTable)
+    .where(and(eq(coursesTable.id, courseId), eq(coursesTable.collegeId, collegeId), isNull(coursesTable.deletedAt), eq(coursesTable.status, "active")));
+  if (!course) { res.status(400).json({ error: "Selected course was not found for this college." }); return; }
+
+  // Semester must belong to the selected course and be active/upcoming
+  const [semester] = await db.select().from(courseSemestersTable)
+    .where(and(
+      eq(courseSemestersTable.id, semesterId),
+      eq(courseSemestersTable.courseId, courseId),
+      isNull(courseSemestersTable.deletedAt),
+      inArray(courseSemestersTable.status, ["active", "upcoming"]),
+    ));
+  if (!semester) { res.status(400).json({ error: "Selected semester was not found for this course." }); return; }
+
   const passwordHash = await bcrypt.hash(password, 12);
   const otp = generateOtp();
-  storeOtp(email, otp, { name, email: email.toLowerCase(), passwordHash, college, courseName, passInYear, passOutYear });
+  storeOtp(email, otp, {
+    name, email: lowerEmail, passwordHash,
+    collegeId, collegeName: college.name,
+    courseId, courseName: course.name,
+    semesterId, passInYear, passOutYear,
+  });
 
   // In production: send real email. For demo, return OTP in response.
   res.json({ ok: true, demoOtp: otp });
@@ -126,7 +162,7 @@ router.post("/auth/signup/complete", async (req, res): Promise<void> => {
     return;
   }
 
-  const { name, passwordHash, college, courseName, passInYear, passOutYear } = result.signupData;
+  const { name, passwordHash, collegeId, collegeName, courseId, courseName, semesterId, passInYear, passOutYear } = result.signupData;
 
   // Derive current year from pass-in/pass-out
   const currentYear = new Date().getFullYear();
@@ -136,9 +172,12 @@ router.post("/auth/signup/complete", async (req, res): Promise<void> => {
     name,
     email: email.toLowerCase(),
     passwordHash,
-    college,
+    college: collegeName,
     department: courseName,
     courseName,
+    collegeId,
+    courseId,
+    semesterId,
     passInYear,
     passOutYear,
     year: yearOfStudy,

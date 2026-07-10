@@ -11,7 +11,7 @@ import { Link, useLocation } from "wouter";
 import {
   Mail, Lock, Eye, EyeOff, ArrowRight, ArrowLeft,
   CheckCircle2, KeyRound, RefreshCw, User, GraduationCap,
-  BookOpen, Calendar, Sparkles, Check,
+  BookOpen, Calendar, Sparkles, Check, Layers,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,49 +20,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { homeRouteForRole } from "@/features/auth/auth-utils";
 
-/* ─── College list ────────────────────────────────────────────── */
-const COLLEGES = [
-  "Indian Institute of Technology Bombay",
-  "Indian Institute of Technology Delhi",
-  "Indian Institute of Technology Madras",
-  "Indian Institute of Technology Kanpur",
-  "Indian Institute of Technology Kharagpur",
-  "Indian Institute of Technology Roorkee",
-  "Indian Institute of Technology Hyderabad",
-  "Indian Institute of Technology Guwahati",
-  "Indian Institute of Science Bangalore",
-  "National Institute of Technology Trichy",
-  "National Institute of Technology Warangal",
-  "National Institute of Technology Surathkal",
-  "National Institute of Technology Calicut",
-  "Birla Institute of Technology and Science Pilani",
-  "BITS Pilani – Goa Campus",
-  "BITS Pilani – Hyderabad Campus",
-  "Vellore Institute of Technology",
-  "Manipal Institute of Technology",
-  "SRM Institute of Science and Technology",
-  "Amrita School of Engineering",
-  "PSG College of Technology",
-  "Coimbatore Institute of Technology",
-  "Anna University",
-  "Delhi Technological University",
-  "Netaji Subhas University of Technology",
-  "Jadavpur University",
-  "Pune Institute of Computer Technology",
-  "College of Engineering Pune",
-  "Thapar Institute of Engineering and Technology",
-  "PES University",
-  "RV College of Engineering",
-  "BMS College of Engineering",
-  "Ramaiah Institute of Technology",
-  "Christ University",
-  "Symbiosis Institute of Technology",
-  "KIIT University",
-  "LPU – Lovely Professional University",
-  "Chandigarh University",
-  "Graphic Era University",
-  "Other",
-];
+/* ─── Academic hierarchy types (fetched from the API) ─────────── */
+interface CollegeOption { id: number; name: string; slug: string; emailDomain: string; city?: string; state?: string; }
+interface CourseOption { id: number; name: string; code: string; durationSemesters: number; }
+interface SemesterOption { id: number; number: number; name: string; }
 
 const YEAR_OPTIONS = Array.from({ length: 15 }, (_, i) => 2015 + i); // 2015–2029
 
@@ -142,13 +103,13 @@ function StepBar({ step }: { step: 1 | 2 | 3 }) {
   );
 }
 
-/* ─── Searchable college dropdown ─────────────────────────────── */
-function CollegeCombobox({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/* ─── Searchable college dropdown (backed by /api/colleges) ────── */
+function CollegeCombobox({ colleges, value, onChange }: { colleges: CollegeOption[]; value: CollegeOption | null; onChange: (v: CollegeOption | null) => void }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState(value);
+  const [query, setQuery] = useState(value?.name ?? "");
   const ref = useRef<HTMLDivElement>(null);
 
-  const filtered = COLLEGES.filter((c) => c.toLowerCase().includes(query.toLowerCase())).slice(0, 8);
+  const filtered = colleges.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())).slice(0, 8);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -158,9 +119,9 @@ function CollegeCombobox({ value, onChange }: { value: string; onChange: (v: str
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  const select = (college: string) => {
+  const select = (college: CollegeOption) => {
     onChange(college);
-    setQuery(college);
+    setQuery(college.name);
     setOpen(false);
   };
 
@@ -172,22 +133,28 @@ function CollegeCombobox({ value, onChange }: { value: string; onChange: (v: str
           placeholder="Search your college..."
           className="h-11 pl-10 bg-white"
           value={query}
-          onChange={(e) => { setQuery(e.target.value); onChange(""); setOpen(true); }}
+          onChange={(e) => { setQuery(e.target.value); onChange(null); setOpen(true); }}
           onFocus={() => setOpen(true)}
           autoComplete="off"
         />
       </div>
       {open && filtered.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto">
           {filtered.map((c) => (
-            <button key={c} type="button" onClick={() => select(c)}
+            <button key={c.id} type="button" onClick={() => select(c)}
               className={cn(
                 "w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 transition-colors",
-                value === c ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700"
+                value?.id === c.id ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700"
               )}>
-              {c}
+              <div className="font-medium">{c.name}</div>
+              <div className="text-xs text-slate-400">@{c.emailDomain}{c.city ? ` · ${c.city}` : ""}</div>
             </button>
           ))}
+        </div>
+      )}
+      {open && query && filtered.length === 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg px-4 py-3 text-sm text-slate-400">
+          No colleges found.
         </div>
       )}
     </div>
@@ -208,12 +175,55 @@ export default function SignupPage() {
   const [showPass, setShowPass] = useState(false);
   const [step1Errors, setStep1Errors] = useState<Record<string, string>>({});
 
-  // Step 2
-  const [college, setCollege] = useState("");
-  const [courseName, setCourseName] = useState("");
+  // Step 2 — academic hierarchy, fetched live from the API
+  const [colleges, setColleges] = useState<CollegeOption[]>([]);
+  const [collegesLoading, setCollegesLoading] = useState(true);
+  const [college, setCollege] = useState<CollegeOption | null>(null);
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [course, setCourse] = useState<CourseOption | null>(null);
+  const [semesters, setSemesters] = useState<SemesterOption[]>([]);
+  const [semestersLoading, setSemestersLoading] = useState(false);
+  const [semester, setSemester] = useState<SemesterOption | null>(null);
   const [passInYear, setPassInYear] = useState<number | "">("");
   const [passOutYear, setPassOutYear] = useState<number | "">("");
   const [step2Errors, setStep2Errors] = useState<Record<string, string>>({});
+  const [collegesLoadError, setCollegesLoadError] = useState(false);
+  const [coursesLoadError, setCoursesLoadError] = useState(false);
+  const [semestersLoadError, setSemestersLoadError] = useState(false);
+
+  useEffect(() => {
+    setCollegesLoadError(false);
+    fetch("/api/colleges")
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(setColleges)
+      .catch(() => setCollegesLoadError(true))
+      .finally(() => setCollegesLoading(false));
+  }, []);
+
+  // College changed → reset course/semester, fetch that college's courses
+  useEffect(() => {
+    setCourse(null); setCourses([]); setSemester(null); setSemesters([]); setCoursesLoadError(false);
+    if (!college) return;
+    setCoursesLoading(true);
+    fetch(`/api/colleges/${college.id}/courses`)
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(setCourses)
+      .catch(() => setCoursesLoadError(true))
+      .finally(() => setCoursesLoading(false));
+  }, [college]);
+
+  // Course changed → reset semester, fetch that course's semesters
+  useEffect(() => {
+    setSemester(null); setSemesters([]); setSemestersLoadError(false);
+    if (!course) return;
+    setSemestersLoading(true);
+    fetch(`/api/courses/${course.id}/semesters`)
+      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(setSemesters)
+      .catch(() => setSemestersLoadError(true))
+      .finally(() => setSemestersLoading(false));
+  }, [course]);
 
   // Step 3
   const [otp, setOtp] = useState("");
@@ -258,11 +268,15 @@ export default function SignupPage() {
   const validateStep2 = () => {
     const errors: Record<string, string> = {};
     if (!college) errors.college = "Please select your college.";
-    if (!courseName.trim()) errors.courseName = "Course name is required.";
+    if (!course) errors.course = "Please select your course.";
+    if (!semester) errors.semester = "Please select your current semester.";
     if (!passInYear) errors.passInYear = "Select your pass-in year.";
     if (!passOutYear) errors.passOutYear = "Select your pass-out year.";
     if (passInYear && passOutYear && Number(passOutYear) < Number(passInYear)) {
       errors.passOutYear = "Pass-out year must be on or after pass-in year.";
+    }
+    if (college && !email.trim().toLowerCase().endsWith(`@${college.emailDomain}`)) {
+      errors.general = `Your email must end in @${college.emailDomain} to sign up for ${college.name}.`;
     }
     setStep2Errors(errors);
     return Object.keys(errors).length === 0;
@@ -271,14 +285,15 @@ export default function SignupPage() {
   /* ─ Step 2 → 3: initiate signup ─ */
   const handleProceedToOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateStep2()) return;
+    if (!validateStep2() || !college || !course || !semester) return;
     setLoading(true);
     const res = await initiateSignup({
       name: name.trim(),
       email: email.trim().toLowerCase(),
       password,
-      college,
-      courseName: courseName.trim(),
+      collegeId: college.id,
+      courseId: course.id,
+      semesterId: semester.id,
       passInYear: Number(passInYear),
       passOutYear: Number(passOutYear),
     });
@@ -309,11 +324,12 @@ export default function SignupPage() {
 
   /* ─ Resend OTP ─ */
   const handleResend = async () => {
+    if (!college || !course || !semester) return;
     setOtpError("");
     setLoading(true);
     const res = await initiateSignup({
       name: name.trim(), email: email.trim().toLowerCase(), password,
-      college, courseName: courseName.trim(),
+      collegeId: college.id, courseId: course.id, semesterId: semester.id,
       passInYear: Number(passInYear), passOutYear: Number(passOutYear),
     });
     setLoading(false);
@@ -467,7 +483,17 @@ export default function SignupPage() {
                   {/* College */}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">College / University</label>
-                    <CollegeCombobox value={college} onChange={(v) => { setCollege(v); setStep2Errors((p) => ({ ...p, college: "" })); }} />
+                    {collegesLoading ? (
+                      <div className="h-11 rounded-md bg-slate-100 animate-pulse" />
+                    ) : collegesLoadError ? (
+                      <div className="flex items-center justify-between h-11 px-3 rounded-md border border-red-200 bg-red-50 text-sm text-red-600">
+                        Couldn't load colleges.
+                        <button type="button" className="font-semibold underline" onClick={() => { setCollegesLoading(true); setCollegesLoadError(false); fetch("/api/colleges").then((r) => { if (!r.ok) throw new Error(); return r.json(); }).then(setColleges).catch(() => setCollegesLoadError(true)).finally(() => setCollegesLoading(false)); }}>Retry</button>
+                      </div>
+                    ) : (
+                      <CollegeCombobox colleges={colleges} value={college} onChange={(v) => { setCollege(v); setStep2Errors((p) => ({ ...p, college: "" })); }} />
+                    )}
+                    {college && <p className="text-xs text-slate-400 mt-1">Signup requires an email ending in <strong>@{college.emailDomain}</strong></p>}
                     {step2Errors.college && <p className="text-xs text-red-500 mt-1">{step2Errors.college}</p>}
                   </div>
 
@@ -475,11 +501,44 @@ export default function SignupPage() {
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1.5">Course / Branch</label>
                     <div className="relative">
-                      <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                      <Input placeholder="e.g. B.Tech Computer Science" className="h-11 pl-10 bg-white"
-                        value={courseName} onChange={(e) => { setCourseName(e.target.value); setStep2Errors((p) => ({ ...p, courseName: "" })); }} />
+                      <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 z-10" />
+                      <select
+                        className="w-full h-11 rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        value={course?.id ?? ""}
+                        disabled={!college || coursesLoading}
+                        onChange={(e) => {
+                          const c = courses.find((x) => x.id === Number(e.target.value)) ?? null;
+                          setCourse(c);
+                          setStep2Errors((p) => ({ ...p, course: "" }));
+                        }}>
+                        <option value="">{!college ? "Select a college first" : coursesLoading ? "Loading courses…" : courses.length === 0 ? "No courses available" : "Select course"}</option>
+                        {courses.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.code})</option>)}
+                      </select>
                     </div>
-                    {step2Errors.courseName && <p className="text-xs text-red-500 mt-1">{step2Errors.courseName}</p>}
+                    {coursesLoadError && <p className="text-xs text-red-500 mt-1">Couldn't load courses for this college. Try re-selecting it.</p>}
+                    {step2Errors.course && <p className="text-xs text-red-500 mt-1">{step2Errors.course}</p>}
+                  </div>
+
+                  {/* Current Semester */}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">Current Semester</label>
+                    <div className="relative">
+                      <Layers className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 z-10" />
+                      <select
+                        className="w-full h-11 rounded-md border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                        value={semester?.id ?? ""}
+                        disabled={!course || semestersLoading}
+                        onChange={(e) => {
+                          const s = semesters.find((x) => x.id === Number(e.target.value)) ?? null;
+                          setSemester(s);
+                          setStep2Errors((p) => ({ ...p, semester: "" }));
+                        }}>
+                        <option value="">{!course ? "Select a course first" : semestersLoading ? "Loading semesters…" : semesters.length === 0 ? "No semesters available" : "Select semester"}</option>
+                        {semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    {semestersLoadError && <p className="text-xs text-red-500 mt-1">Couldn't load semesters for this course. Try re-selecting it.</p>}
+                    {step2Errors.semester && <p className="text-xs text-red-500 mt-1">{step2Errors.semester}</p>}
                   </div>
 
                   {/* Years */}

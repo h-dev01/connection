@@ -41,8 +41,9 @@ export interface SignupData {
   name: string;
   email: string;
   password: string;
-  college: string;
-  courseName: string;
+  collegeId: number;
+  courseId: number;
+  semesterId: number;
   passInYear: number;
   passOutYear: number;
 }

@@ -9,7 +9,7 @@ import {
   Server, Database, Users, ShieldAlert, TrendingUp, ShoppingBag,
   BookOpen, Plus, Pencil, Trash2, Archive, RefreshCw, X, Check,
   Shield, Layers, ClipboardList, ToggleLeft, ToggleRight, Eye,
-  ChevronRight, Search, Clock,
+  ChevronRight, Search, Clock, GraduationCap as GraduationCapIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -191,6 +191,532 @@ function SectionEmpty({ label, onAdd }: { label: string; onAdd: () => void }) {
       <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={onAdd}>
         <Plus className="h-4 w-4 mr-1" /> Add {label}
       </Button>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COLLEGES TAB — Colleges → Courses → Semesters → Subjects
+══════════════════════════════════════════════════════════════ */
+function SubjectsPanel({ semester, actorName, onBack }: { semester: any; actorName: string; onBack: () => void }) {
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name: "", code: "", credits: 3 });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    const r = await fetch(`/api/admin/subjects?semesterId=${semester.id}`);
+    setSubjects(await r.json());
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [semester.id]);
+
+  const openNew = () => { setForm({ name: "", code: "", credits: 3 }); setEditing(null); setError(""); setShowForm(true); };
+  const openEdit = (s: any) => { setForm({ name: s.name, code: s.code, credits: s.credits }); setEditing(s); setError(""); setShowForm(true); };
+
+  const save = async () => {
+    if (!form.name || !form.code) { setError("Name and code are required."); return; }
+    setSaving(true); setError("");
+    const url = editing ? `/api/admin/subjects/${editing.id}` : "/api/admin/subjects";
+    const method = editing ? "PATCH" : "POST";
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, semesterId: semester.id, actorName }) });
+    const data = await r.json();
+    setSaving(false);
+    if (!r.ok) { setError(data.error ?? "Failed to save."); return; }
+    setShowForm(false); load();
+  };
+
+  const del = async (id: number) => { await fetch(`/api/admin/subjects/${id}`, { method: "DELETE" }); load(); };
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 text-sm font-medium">
+        <ArrowLeftIcon /> Back to semesters
+      </button>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Subjects — {semester.name}</h3>
+          <p className="text-sm text-slate-500 mt-0.5">Subjects taught in this semester.</p>
+        </div>
+        <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew}>
+          <Plus className="h-4 w-4 mr-1.5" /> Add Subject
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="py-8 text-center text-slate-400">Loading…</div>
+      ) : subjects.length === 0 ? (
+        <SectionEmpty label="Subject" onAdd={openNew} />
+      ) : (
+        <div className="space-y-2">
+          {subjects.map((s) => (
+            <div key={s.id} className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 px-5 py-3.5 shadow-sm">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900">{s.name}</span>
+                  <code className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">{s.code}</code>
+                  <Badge className="text-xs bg-slate-100 text-slate-500 border-slate-200">{s.credits} credits</Badge>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-blue-600" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-red-600" onClick={() => del(s.id)}><Trash2 className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editing ? "Edit Subject" : "Add Subject"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Subject Name *</label>
+              <Input placeholder="e.g. Data Structures & Algorithms" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Code *</label>
+                <Input placeholder="e.g. CS301" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Credits</label>
+                <Input type="number" min={0} max={20} value={form.credits} onChange={(e) => setForm({ ...form, credits: Number(e.target.value) })} />
+              </div>
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold" disabled={saving} onClick={save}>
+                {saving ? "Saving…" : editing ? "Save Changes" : "Add Subject"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ArrowLeftIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>;
+}
+
+function CourseSemestersPanel({ course, actorName, onBack }: { course: any; actorName: string; onBack: () => void }) {
+  const [semesters, setSemesters] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ number: 1, name: "", startDate: "", endDate: "", status: "upcoming" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [viewingSubjectsOf, setViewingSubjectsOf] = useState<any>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await fetch(`/api/admin/course-semesters?courseId=${course.id}`);
+    setSemesters(await r.json());
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [course.id]);
+
+  const openNew = () => { setForm({ number: semesters.length + 1, name: `Semester ${semesters.length + 1}`, startDate: "", endDate: "", status: "upcoming" }); setEditing(null); setError(""); setShowForm(true); };
+  const openEdit = (s: any) => { setForm({ number: s.number, name: s.name, startDate: s.startDate ?? "", endDate: s.endDate ?? "", status: s.status }); setEditing(s); setError(""); setShowForm(true); };
+
+  const save = async () => {
+    if (!form.name) { setError("Name is required."); return; }
+    setSaving(true); setError("");
+    const url = editing ? `/api/admin/course-semesters/${editing.id}` : "/api/admin/course-semesters";
+    const method = editing ? "PATCH" : "POST";
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, courseId: course.id, actorName }) });
+    const data = await r.json();
+    setSaving(false);
+    if (!r.ok) { setError(data.error ?? "Failed to save."); return; }
+    setShowForm(false); load();
+  };
+
+  const del = async (id: number) => { await fetch(`/api/admin/course-semesters/${id}`, { method: "DELETE" }); load(); };
+
+  // Auto-generate all semesters up to the course's declared duration
+  const generateAll = async () => {
+    setGenerating(true);
+    const existingNumbers = new Set(semesters.map((s) => s.number));
+    for (let n = 1; n <= course.durationSemesters; n++) {
+      if (existingNumbers.has(n)) continue;
+      await fetch("/api/admin/course-semesters", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId: course.id, number: n, name: `Semester ${n}`, status: "upcoming", actorName }),
+      });
+    }
+    setGenerating(false);
+    load();
+  };
+
+  if (viewingSubjectsOf) {
+    return <SubjectsPanel semester={viewingSubjectsOf} actorName={actorName} onBack={() => setViewingSubjectsOf(null)} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 text-sm font-medium">
+        <ArrowLeftIcon /> Back to courses
+      </button>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Semesters — {course.name}</h3>
+          <p className="text-sm text-slate-500 mt-0.5">This course runs for {course.durationSemesters} semester{course.durationSemesters !== 1 ? "s" : ""}.</p>
+        </div>
+        <div className="flex gap-2">
+          {semesters.length < course.durationSemesters && (
+            <Button size="sm" variant="outline" className="font-semibold" disabled={generating} onClick={generateAll}>
+              <RefreshCw className={cn("h-4 w-4 mr-1.5", generating && "animate-spin")} /> Generate Remaining
+            </Button>
+          )}
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew}>
+            <Plus className="h-4 w-4 mr-1.5" /> Add Semester
+          </Button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-8 text-center text-slate-400">Loading…</div>
+      ) : semesters.length === 0 ? (
+        <SectionEmpty label="Semester" onAdd={openNew} />
+      ) : (
+        <div className="space-y-2">
+          {semesters.map((s) => (
+            <div key={s.id} className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 px-5 py-3.5 shadow-sm">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900">#{s.number} · {s.name}</span>
+                  <Badge className={cn("text-xs border capitalize", STATUS_COLORS[s.status] ?? "bg-slate-100 text-slate-500")}>{s.status}</Badge>
+                </div>
+                {(s.startDate || s.endDate) && <p className="text-xs text-slate-400 mt-1">{s.startDate ?? "?"} → {s.endDate ?? "?"}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 text-xs font-semibold" onClick={() => setViewingSubjectsOf(s)}>
+                  Subjects <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-blue-600" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-red-600" onClick={() => del(s.id)}><Trash2 className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editing ? "Edit Semester" : "Add Semester"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Number *</label>
+                <Input type="number" min={1} max={20} value={form.number} onChange={(e) => setForm({ ...form, number: Number(e.target.value) })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Name *</label>
+                <Input placeholder="e.g. Semester 5" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Start Date</label>
+                <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">End Date</label>
+                <Input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Status</label>
+              <select className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="upcoming">Upcoming</option>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold" disabled={saving} onClick={save}>
+                {saving ? "Saving…" : editing ? "Save Changes" : "Add Semester"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CollegeCoursesPanel({ college, actorName, onBack }: { college: any; actorName: string; onBack: () => void }) {
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name: "", code: "", durationSemesters: 8, status: "active" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [viewingSemestersOf, setViewingSemestersOf] = useState<any>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await fetch(`/api/admin/courses?collegeId=${college.id}`);
+    setCourses(await r.json());
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [college.id]);
+
+  const openNew = () => { setForm({ name: "", code: "", durationSemesters: 8, status: "active" }); setEditing(null); setError(""); setShowForm(true); };
+  const openEdit = (c: any) => { setForm({ name: c.name, code: c.code, durationSemesters: c.durationSemesters, status: c.status }); setEditing(c); setError(""); setShowForm(true); };
+
+  const save = async () => {
+    if (!form.name || !form.code) { setError("Name and code are required."); return; }
+    setSaving(true); setError("");
+    const url = editing ? `/api/admin/courses/${editing.id}` : "/api/admin/courses";
+    const method = editing ? "PATCH" : "POST";
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, collegeId: college.id, actorName }) });
+    const data = await r.json();
+    setSaving(false);
+    if (!r.ok) { setError(data.error ?? "Failed to save."); return; }
+    setShowForm(false); load();
+  };
+
+  const del = async (id: number) => { await fetch(`/api/admin/courses/${id}`, { method: "DELETE" }); load(); };
+
+  if (viewingSemestersOf) {
+    return <CourseSemestersPanel course={viewingSemestersOf} actorName={actorName} onBack={() => setViewingSemestersOf(null)} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 text-sm font-medium">
+        <ArrowLeftIcon /> Back to colleges
+      </button>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">Courses — {college.name}</h3>
+          <p className="text-sm text-slate-500 mt-0.5">Only students at this college can select these courses at signup.</p>
+        </div>
+        <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew}>
+          <Plus className="h-4 w-4 mr-1.5" /> Add Course
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="py-8 text-center text-slate-400">Loading…</div>
+      ) : courses.length === 0 ? (
+        <SectionEmpty label="Course" onAdd={openNew} />
+      ) : (
+        <div className="space-y-2">
+          {courses.map((c) => (
+            <div key={c.id} className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 px-5 py-3.5 shadow-sm">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900">{c.name}</span>
+                  <code className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">{c.code}</code>
+                  <Badge className="text-xs bg-slate-100 text-slate-500 border-slate-200">{c.durationSemesters} semesters</Badge>
+                  <Badge className={cn("text-xs border capitalize", c.status === "active" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500")}>{c.status}</Badge>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 text-xs font-semibold" onClick={() => setViewingSemestersOf(c)}>
+                  Semesters <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-blue-600" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-red-600" onClick={() => del(c.id)}><Trash2 className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editing ? "Edit Course" : "Add Course"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Course Name *</label>
+              <Input placeholder="e.g. B.Tech Computer Science" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Code *</label>
+                <Input placeholder="e.g. CSE" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Total Semesters *</label>
+                <Input type="number" min={1} max={20} value={form.durationSemesters} onChange={(e) => setForm({ ...form, durationSemesters: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Status</label>
+              <select className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold" disabled={saving} onClick={save}>
+                {saving ? "Saving…" : editing ? "Save Changes" : "Add Course"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function CollegesTab({ actorName }: { actorName: string }) {
+  const [colleges, setColleges] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name: "", code: "", emailDomain: "", city: "", state: "", pincode: "", status: "active" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [viewingCoursesOf, setViewingCoursesOf] = useState<any>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const r = await fetch("/api/admin/colleges");
+    setColleges(await r.json());
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const openNew = () => { setForm({ name: "", code: "", emailDomain: "", city: "", state: "", pincode: "", status: "active" }); setEditing(null); setError(""); setShowForm(true); };
+  const openEdit = (c: any) => { setForm({ name: c.name, code: c.code, emailDomain: c.emailDomain, city: c.city ?? "", state: c.state ?? "", pincode: c.pincode ?? "", status: c.status }); setEditing(c); setError(""); setShowForm(true); };
+
+  const save = async () => {
+    if (!form.name || !form.code || !form.emailDomain) { setError("Name, code, and email domain are required."); return; }
+    setSaving(true); setError("");
+    const url = editing ? `/api/admin/colleges/${editing.id}` : "/api/admin/colleges";
+    const method = editing ? "PATCH" : "POST";
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, actorName }) });
+    const data = await r.json();
+    setSaving(false);
+    if (!r.ok) { setError(data.error ?? "Failed to save."); return; }
+    setShowForm(false); load();
+  };
+
+  const del = async (id: number) => { await fetch(`/api/admin/colleges/${id}`, { method: "DELETE" }); load(); };
+
+  if (viewingCoursesOf) {
+    return <CollegeCoursesPanel college={viewingCoursesOf} actorName={actorName} onBack={() => setViewingCoursesOf(null)} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Colleges</h2>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Add colleges the platform supports. Each college's email domain gates student signup
+            (e.g. only <code className="bg-slate-100 px-1 rounded">@dit.edu</code> addresses can join DIT).
+          </p>
+        </div>
+        <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew}>
+          <Plus className="h-4 w-4 mr-1.5" /> Add College
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="py-12 text-center text-slate-400">Loading…</div>
+      ) : colleges.length === 0 ? (
+        <SectionEmpty label="College" onAdd={openNew} />
+      ) : (
+        <div className="space-y-2">
+          {colleges.map((c) => (
+            <div key={c.id} className="flex items-center gap-4 bg-white rounded-xl border border-slate-200 px-5 py-4 shadow-sm">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-900">{c.name}</span>
+                  <code className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono">{c.code}</code>
+                  <Badge className="text-xs bg-blue-50 text-blue-700 border-blue-200">@{c.emailDomain}</Badge>
+                  <Badge className={cn("text-xs border capitalize", c.status === "active" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500")}>{c.status}</Badge>
+                </div>
+                {(c.city || c.state || c.pincode) && (
+                  <p className="text-xs text-slate-400 mt-1">{[c.city, c.state, c.pincode].filter(Boolean).join(", ")}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 text-xs font-semibold" onClick={() => setViewingCoursesOf(c)}>
+                  Courses <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-blue-600" onClick={() => openEdit(c)}><Pencil className="h-4 w-4" /></Button>
+                <Button size="sm" variant="ghost" className="h-8 px-2 text-slate-500 hover:text-red-600" onClick={() => del(c.id)}><Trash2 className="h-4 w-4" /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editing ? "Edit College" : "Add College"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">College Name *</label>
+              <Input placeholder="e.g. Delhi Institute of Technology" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Code *</label>
+                <Input placeholder="e.g. DIT01" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Email Domain *</label>
+                <Input placeholder="e.g. dit.edu" value={form.emailDomain} onChange={(e) => setForm({ ...form, emailDomain: e.target.value })} />
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 -mt-2">Only students with an email ending in this domain can sign up for this college.</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">City</label>
+                <Input placeholder="e.g. Delhi" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">State</label>
+                <Input placeholder="e.g. Delhi" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-slate-700 block mb-1.5">Pincode</label>
+                <Input placeholder="e.g. 110042" value={form.pincode} onChange={(e) => setForm({ ...form, pincode: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1.5">Status</label>
+              <select className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+              </select>
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold" disabled={saving} onClick={save}>
+                {saving ? "Saving…" : editing ? "Save Changes" : "Add College"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -731,10 +1257,11 @@ function AuditLogTab() {
 /* ══════════════════════════════════════════════════════════════
    MAIN ADMIN PAGE
 ══════════════════════════════════════════════════════════════ */
-type Tab = "overview" | "semesters" | "toggles" | "features" | "moderators" | "audit";
+type Tab = "overview" | "colleges" | "semesters" | "toggles" | "features" | "moderators" | "audit";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "overview", label: "Overview", icon: Activity },
+  { id: "colleges", label: "Colleges", icon: GraduationCapIcon },
   { id: "semesters", label: "Semesters", icon: BookOpen },
   { id: "toggles", label: "Feature Toggles", icon: ToggleRight },
   { id: "features", label: "Feature Registry", icon: Layers },
@@ -885,6 +1412,7 @@ export default function Admin() {
               </div>
             )}
 
+            {activeTab === "colleges" && <CollegesTab actorName={actorName} />}
             {activeTab === "semesters" && <SemestersTab actorName={actorName} />}
             {activeTab === "toggles" && <FeatureToggleTab actorName={actorName} />}
             {activeTab === "features" && <FeaturesTab actorName={actorName} />}

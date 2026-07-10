@@ -4,7 +4,7 @@
  * All endpoints require the caller to be admin (enforced client-side for now).
  */
 import { Router, type IRouter } from "express";
-import { eq, desc, isNull, and } from "drizzle-orm";
+import { eq, desc, isNull, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -45,8 +45,12 @@ const CollegeSchema = z.object({
   name: z.string().min(1),
   code: z.string().min(1),
   slug: z.string().min(1).optional(),
+  emailDomain: z.string().min(3, "Email domain is required (e.g. dit.edu)")
+    .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/i, "Enter a valid domain, e.g. dit.edu")
+    .transform((v) => v.toLowerCase().replace(/^@/, "")),
   city: z.string().optional(),
   state: z.string().optional(),
+  pincode: z.string().optional(),
   logoUrl: z.string().optional(),
   status: z.enum(["active", "disabled"]).default("active"),
 });
@@ -56,9 +60,14 @@ router.post("/admin/colleges", async (req, res): Promise<void> => {
   const parsed = CollegeSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
   const { name, slug, ...rest } = parsed.data;
-  const [row] = await db.insert(collegesTable).values({ name, slug: slug || slugify(name), ...rest }).returning();
-  await writeAudit({ actorName: req.body?.actorName ?? "Admin", actorRole: "admin", action: "create_college", entityType: "college", entityId: String(row.id), entityLabel: row.name });
-  res.status(201).json(row);
+  try {
+    const [row] = await db.insert(collegesTable).values({ name, slug: slug || slugify(name), ...rest }).returning();
+    await writeAudit({ actorName: req.body?.actorName ?? "Admin", actorRole: "admin", action: "create_college", entityType: "college", entityId: String(row.id), entityLabel: row.name });
+    res.status(201).json(row);
+  } catch (err: any) {
+    if (err?.code === "23505") { res.status(409).json({ error: "A college with this code, slug, or email domain already exists." }); return; }
+    throw err;
+  }
 });
 
 // PATCH /api/admin/colleges/:id — edit or disable (status: "disabled")
@@ -69,9 +78,14 @@ router.patch("/admin/colleges/:id", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
   const [before] = await db.select().from(collegesTable).where(eq(collegesTable.id, id));
   if (!before) { res.status(404).json({ error: "Not found" }); return; }
-  const [row] = await db.update(collegesTable).set(parsed.data).where(eq(collegesTable.id, id)).returning();
-  await writeAudit({ actorName: req.body?.actorName ?? "Admin", actorRole: "admin", action: "update_college", entityType: "college", entityId: String(id), entityLabel: row.name, beforeState: before.status, afterState: row.status });
-  res.json(row);
+  try {
+    const [row] = await db.update(collegesTable).set(parsed.data).where(eq(collegesTable.id, id)).returning();
+    await writeAudit({ actorName: req.body?.actorName ?? "Admin", actorRole: "admin", action: "update_college", entityType: "college", entityId: String(id), entityLabel: row.name, beforeState: before.status, afterState: row.status });
+    res.json(row);
+  } catch (err: any) {
+    if (err?.code === "23505") { res.status(409).json({ error: "A college with this code, slug, or email domain already exists." }); return; }
+    throw err;
+  }
 });
 
 // DELETE /api/admin/colleges/:id — soft delete (sets deletedAt)
@@ -82,6 +96,59 @@ router.delete("/admin/colleges/:id", async (req, res): Promise<void> => {
   if (!row) { res.status(404).json({ error: "Not found" }); return; }
   await writeAudit({ actorName: req.body?.actorName ?? "Admin", actorRole: "admin", action: "delete_college", entityType: "college", entityId: String(id), entityLabel: row.name });
   res.json({ ok: true });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   PUBLIC READ ENDPOINTS (used by the signup form — active rows only,
+   no sensitive fields, no auth required)
+══════════════════════════════════════════════════════════════ */
+
+// GET /api/colleges — active colleges for the signup dropdown
+router.get("/colleges", async (_req, res): Promise<void> => {
+  const rows = await db.select({
+    id: collegesTable.id,
+    name: collegesTable.name,
+    slug: collegesTable.slug,
+    emailDomain: collegesTable.emailDomain,
+    city: collegesTable.city,
+    state: collegesTable.state,
+  }).from(collegesTable)
+    .where(and(isNull(collegesTable.deletedAt), eq(collegesTable.status, "active")))
+    .orderBy(collegesTable.name);
+  res.json(rows);
+});
+
+// GET /api/colleges/:id/courses — active courses for a college
+router.get("/colleges/:id/courses", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const rows = await db.select({
+    id: coursesTable.id,
+    name: coursesTable.name,
+    code: coursesTable.code,
+    durationSemesters: coursesTable.durationSemesters,
+  }).from(coursesTable)
+    .where(and(eq(coursesTable.collegeId, id), isNull(coursesTable.deletedAt), eq(coursesTable.status, "active")))
+    .orderBy(coursesTable.name);
+  res.json(rows);
+});
+
+// GET /api/courses/:id/semesters — active/upcoming semesters for a course
+router.get("/courses/:id/semesters", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const rows = await db.select({
+    id: courseSemestersTable.id,
+    number: courseSemestersTable.number,
+    name: courseSemestersTable.name,
+  }).from(courseSemestersTable)
+    .where(and(
+      eq(courseSemestersTable.courseId, id),
+      isNull(courseSemestersTable.deletedAt),
+      inArray(courseSemestersTable.status, ["active", "upcoming"]),
+    ))
+    .orderBy(courseSemestersTable.number);
+  res.json(rows);
 });
 
 /* ══════════════════════════════════════════════════════════════

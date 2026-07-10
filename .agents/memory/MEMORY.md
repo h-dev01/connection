@@ -2,3 +2,4 @@
 - [Study materials approval flow](study-materials-approval.md) — status field ("pending"→"approved"|"rejected") replaces old verified boolean; student-facing GET only returns approved items.
 - [Monorepo structure](monorepo-structure.md) — pnpm monorepo: frontend port 5000 (artifacts/college-connect), API port 8080 (artifacts/api-server), DB (lib/db). Push schema with `pnpm --filter @workspace/db run push`.
 - [Multi-college academic hierarchy](academic-hierarchy.md) — colleges→courses→course_semesters→subjects normalized with FKs; existing tables got additive nullable FK+soft-delete columns, legacy text fields kept for compat.
+- [College email-domain-gated signup](college-email-domain-signup.md) — colleges have unique emailDomain; signup uses collegeId/courseId/semesterId, validated server-side against domain + hierarchy.
