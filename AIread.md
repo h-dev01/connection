@@ -336,3 +336,125 @@ Example — "let admins scope a feature toggle to a specific college/course/seme
 - Schema changes are pushed directly via `pnpm --filter @workspace/db run push` — there's no migration history. Double check before pushing against a populated table (safe so far because tables affected by recent changes were empty).
 - Most feature-page data is still mock data at the top of each page file — check the Feature Map's "Data status" column (Section 2) before assuming any given page is live from the API. Live-data features today: Signup/Signin, Study Hub, Marketplace, Community (feed+Q&A), Dashboard's "recent materials" widget, and Admin's Colleges/Semesters/Feature Registry/Moderators/Audit Log tabs plus all of Moderator except Reports. Everything else (Career, Clubs, Match, Profile showcase, Admin Overview, Moderator Reports) is mock.
 - Backend route file naming mostly mirrors frontend feature folder names, with the noted exceptions above; `academic.ts`, `auth.ts`, `admin.ts`, and `moderator.ts` are cross-cutting/operational routers rather than 1:1 feature mirrors.
+
+---
+
+## 10. 🗂️ Full File Index — every source file, one line each
+
+Every non-generated, non-`node_modules` source file in the repo. Use this when
+you need to jump straight to a specific file instead of going through the
+Feature Map. Generated/build output (`dist/`, `.vite/`, `node_modules/`,
+`lib/*/src/generated/`) is intentionally omitted — it's derived, never edited
+by hand.
+
+### Root
+| File | Purpose |
+|---|---|
+| `AIread.md` | This file. |
+| `replit.md` | Project overview + user preferences, read by the agent every session. |
+| `package.json` | Root workspace manifest (scripts, shared devDependencies). |
+| `pnpm-workspace.yaml` | Declares which folders are pnpm workspace packages. |
+| `pnpm-lock.yaml` | Lockfile — do not hand-edit. |
+| `tsconfig.json` / `tsconfig.base.json` | Root/shared TypeScript config extended by each package. |
+| `.replit` | Replit run/workflow configuration. |
+| `.npmrc`, `.gitignore`, `.replitignore` | Tooling config, not app logic. |
+| `start.sh` | Legacy single-process start script — **not used by any current workflow** (superseded by the three per-artifact workflows); safe to ignore, don't reintroduce a workflow that calls it. |
+| `scripts/src/hello.ts` | Placeholder script verifying workspace tooling works; not part of the app. |
+| `scripts/post-merge.sh` | Runs automatically after a task-agent merge (see `post-merge-setup` skill) to reconcile the environment. |
+
+### `artifacts/college-connect/src` — frontend
+
+**Entry & routing**
+| File | Purpose |
+|---|---|
+| `main.tsx` | React root, mounts `<App />`. |
+| `App.tsx` | Declares every `wouter` route, wraps authenticated pages in `SidebarLayout`, provides `QueryClientProvider`/`AuthProvider`/`SubmissionsProvider`. Contains an unused `RoleGuard` helper (see Section 9). |
+| `index.css` | Tailwind v4 theme tokens + global styles. |
+
+**Features** (one folder per row in Section 2's Feature Map)
+| File | Purpose |
+|---|---|
+| `features/home/HomePage.tsx` | Public landing page. |
+| `features/auth/LoginPage.tsx` | Student email+password→OTP sign-in UI; admin/moderator demo-credential login UI. |
+| `features/auth/SignupPage.tsx` | 3-step student signup UI: form (cascading College→Course→Semester dropdowns) → OTP → done. Contains `CollegeCombobox` and the cascade-fetch `useEffect` chain with error states. |
+| `features/auth/auth-utils.ts` | `homeRouteForRole()` — post-login redirect target by role. |
+| `features/dashboard/DashboardPage.tsx` | Student home: CGPA/attendance/exam countdown, recent materials (live), marketplace highlights, feed/polls (mock). |
+| `features/study/StudyPage.tsx` | Study Hub: materials list/upload (live), AI tools UI (mock). |
+| `features/marketplace/MarketplacePage.tsx` | Buy/sell/housing/services listings (live). |
+| `features/community/CommunityPage.tsx` | Feed + anonymous Q&A (live); comments/bookmarks (client-only, no table). |
+| `features/career/CareerPage.tsx` | Internships/resume/interview-prep UI (mock). |
+| `features/clubs/ClubsPage.tsx` | Clubs/organizations/events UI (mock). |
+| `features/profile/ProfilePage.tsx` | Reputation hub; reads real logged-in user, showcase list is mock. |
+| `features/admin/AdminPage.tsx` | Largest feature file — Overview (mock) + Colleges/Semesters/Feature Registry/Moderators/Audit Log tabs (all live), including nested `CollegesTab`→`CollegeCoursesPanel`→`CourseSemestersPanel`→`SubjectsPanel` drill-down components. |
+| `features/moderator/ModeratorPage.tsx` | Feature Toggles/Study Materials/Exam Schedules/Timetables tabs (live), Reports tab (mock). |
+| `features/match/MatchPage.tsx` | "Campus Match" peer/roommate finder (fully mock). |
+| `features/misc/NotFoundPage.tsx` | 404 fallback. |
+
+**Cross-feature**
+| File | Purpose |
+|---|---|
+| `contexts/AuthContext.tsx` | Session state (`localStorage` key `cc_user`), student signup/signin API calls, hardcoded admin/mod demo login (`DEMO_STAFF`), `completeProfile()`. |
+| `contexts/SubmissionsContext.tsx` | Shares upload/approval state between Study Hub and Moderator. |
+| `components/layout/SidebarLayout.tsx` | Dark sidebar shell wrapping every authenticated page; filters nav items by role. |
+| `components/shared/ContentActions.tsx` | Report/delete/action-menu dropdown reused by Community and Marketplace cards. |
+| `components/shared/ProfileCompleteModal.tsx` | Global modal forcing new users to fill in academic details. |
+| `hooks/use-mobile.tsx` | Viewport-width media-query hook. |
+| `hooks/use-toast.ts` | Toast notification state hook (backs `components/ui/toast.tsx`/`toaster.tsx`). |
+| `lib/utils.ts` | `cn()` class-name merge helper and other generic utilities. |
+
+**`components/ui/*`** — 45 shadcn/ui primitives (accordion, alert, alert-dialog,
+aspect-ratio, avatar, badge, breadcrumb, button, button-group, calendar, card,
+carousel, chart, checkbox, collapsible, command, context-menu, dialog, drawer,
+dropdown-menu, empty, field, form, hover-card, input, input-group, input-otp,
+item, kbd, label, menubar, navigation-menu, pagination, popover, progress,
+radio-group, resizable, scroll-area, select, separator, sheet, sidebar,
+skeleton, slider, sonner, spinner, switch, table, tabs, textarea, toast,
+toaster, toggle, toggle-group, tooltip) — generic building blocks, not
+feature-specific, safe to reuse anywhere; rarely need editing.
+
+### `artifacts/api-server/src` — backend
+| File | Purpose |
+|---|---|
+| `index.ts` | Process entry point — starts the HTTP server on `$PORT`. |
+| `app.ts` | Express app setup: JSON body parsing, CORS, `pino-http` request logging, mounts the combined router at `/api`. No auth middleware (see Section 9). |
+| `lib/logger.ts` | `pino` logger instance/config used by `app.ts` and routes. |
+| `lib/.gitkeep`, `middlewares/.gitkeep` | Placeholder files keeping empty dirs in git; `middlewares/` is empty today — the natural home for future auth middleware. |
+| `routes/index.ts` | Imports every route file below and combines them into one router. |
+| `routes/health.ts` | `GET /api/healthz` — infra/monitoring only. |
+| `routes/users.ts` | Profile/Dashboard/Community-leaderboard user data (`lib/api-zod` schemas). |
+| `routes/community.ts` | Feed posts + anonymous Q&A (`lib/api-zod` schemas). |
+| `routes/study.ts` | Study materials CRUD + `/study/feature-status` public map (`lib/api-zod` schemas). |
+| `routes/marketplace.ts` | Listings CRUD (`lib/api-zod` schemas). |
+| `routes/clubs.ts` | Clubs/communities/events/internships reads (`lib/api-zod` schemas). |
+| `routes/stats.ts` | Aggregate stats for Dashboard/Admin/Moderator overviews (`lib/api-zod` schemas). |
+| `routes/academic.ts` | Colleges/Courses/Course-Semesters/Subjects admin CRUD + 3 public signup-read endpoints; inline `zod` schemas; local `writeAudit()`/`slugify()` helpers. |
+| `routes/auth.ts` | Student signup (3-step OTP) + signin (2-step OTP); in-memory OTP store; inline `zod` schemas; `safeUser()` strips `passwordHash` from responses. |
+| `routes/admin.ts` | Legacy `semesters` CRUD, `feature_registry` CRUD, moderator account CRUD, audit-log read; inline `zod` schemas; local `writeAudit()` helper (duplicated from `academic.ts`, not shared). |
+| `routes/moderator.ts` | Study-material approve/reject/edit/delete queue, feature-toggle upsert (per course×semester), exam-schedule/timetable CRUD; inline `zod` schemas; local `writeAudit()` helper (duplicated again). |
+
+### `lib/db/src` — shared database layer
+| File | Purpose |
+|---|---|
+| `index.ts` | Creates the `pg` `Pool` + Drizzle `db` client from `DATABASE_URL`; re-exports every schema file via `export * from "./schema"`. |
+| `schema/index.ts` | Re-exports all table/type definitions from the files below — this is what `@workspace/db` resolves to for consumers. |
+| `schema/users.ts` | `usersTable` + `insertUserSchema`/`User` type. |
+| `schema/posts.ts` | `postsTable`, `qaTable` + insert schemas/types. |
+| `schema/study.ts` | `studyMaterialsTable` + insert schema/type. |
+| `schema/marketplace.ts` | `listingsTable` + insert schema/type. |
+| `schema/clubs.ts` | `clubsTable`, `communitiesTable`, `eventsTable`, `internshipsTable` + insert schemas/types. |
+| `schema/academic.ts` | `collegesTable`, `coursesTable`, `courseSemestersTable`, `subjectsTable` — the normalized hierarchy (Section 5.1). |
+| `schema/admin.ts` | `semestersTable` (legacy), `featureRegistryTable`, `featureTogglesTable`, `moderatorScopesTable`, `examSchedulesTable`, `classTimetablesTable`, `auditLogTable` (Section 5.2). |
+
+### `lib/api-spec`, `lib/api-zod`, `lib/api-client-react` — OpenAPI contract libs (see Section 6 — partially stale/unused)
+| File | Purpose |
+|---|---|
+| `lib/api-spec/openapi.yaml` | The OpenAPI contract. Does not describe `academic.ts`/`auth.ts`/`admin.ts`/`moderator.ts` endpoints (written after codegen was bypassed). |
+| `lib/api-spec/orval.config.ts` | Orval codegen configuration (currently not run — bypassed due to a YAML parsing issue). |
+| `lib/api-zod/src/index.ts` | Re-exports the generated Zod schemas (`src/generated/`, not hand-edited) consumed by the older backend routes. |
+| `lib/api-client-react/src/index.ts` | Re-exports the generated TanStack Query hooks (`src/generated/`, not hand-edited) — **currently unused** by any frontend page. |
+| `lib/api-client-react/src/custom-fetch.ts` | Fetch wrapper used by the generated hooks above. |
+
+### `artifacts/mockup-sandbox` — canvas design tool (not part of the live site)
+Its own isolated Vite app for previewing UI components on the Canvas. Not
+listed file-by-file here since it's unrelated to CollegeConnect's runtime
+behavior — see the `mockup-sandbox` skill if you need to work in it.
