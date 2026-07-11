@@ -12,6 +12,7 @@ import {
   examSchedulesTable,
   classTimetablesTable,
   auditLogTable,
+  localListingsTable,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -361,6 +362,197 @@ router.delete("/moderator/timetables/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   await db.delete(classTimetablesTable).where(eq(classTimetablesTable.id, id));
+  res.json({ ok: true });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   LOCAL LISTINGS — Housing / Restaurants / Local Services
+══════════════════════════════════════════════════════════════ */
+
+// GET /api/moderator/local-listings
+router.get("/moderator/local-listings", async (req, res): Promise<void> => {
+  const toInt = (v: string | undefined) => { const n = parseInt(v ?? "", 10); return isNaN(n) ? undefined : n; };
+  const collegeId = toInt(req.query.collegeId as string);
+  const { category, status, search, roomType, gender, cuisineType, deliveryAvailable, serviceType } = req.query as Record<string, string>;
+
+  let query = db.select().from(localListingsTable).$dynamic();
+  const conditions = [
+    // exclude soft-deleted
+  ] as ReturnType<typeof eq>[];
+
+  // Only show non-deleted
+  conditions.push(eq(localListingsTable.deletedAt, null as unknown as Date));
+
+  if (collegeId) conditions.push(eq(localListingsTable.collegeId, collegeId));
+  if (category) conditions.push(eq(localListingsTable.category, category));
+  if (status) conditions.push(eq(localListingsTable.status, status));
+
+  query = query.where(and(...conditions));
+  let rows = await query.orderBy(desc(localListingsTable.createdAt)).limit(500);
+
+  // JS-side filters for search and metadata fields
+  if (search) {
+    const q = search.toLowerCase();
+    rows = rows.filter(r =>
+      r.name.toLowerCase().includes(q) ||
+      (r.description ?? "").toLowerCase().includes(q) ||
+      (r.address ?? "").toLowerCase().includes(q)
+    );
+  }
+
+  // Metadata filters (parsed from JSON)
+  if (roomType || gender || cuisineType || deliveryAvailable !== undefined && deliveryAvailable !== "" || serviceType) {
+    rows = rows.filter(r => {
+      let meta: Record<string, unknown> = {};
+      try { meta = JSON.parse(r.metadata); } catch { /* skip */ }
+      if (roomType && meta.roomType !== roomType) return false;
+      if (gender && meta.gender !== gender) return false;
+      if (cuisineType && meta.cuisineType !== cuisineType) return false;
+      if (deliveryAvailable === "true" && meta.deliveryAvailable !== true) return false;
+      if (deliveryAvailable === "false" && meta.deliveryAvailable !== false) return false;
+      if (serviceType && meta.serviceType !== serviceType) return false;
+      return true;
+    });
+  }
+
+  res.json(rows);
+});
+
+const LocalListingSchema = z.object({
+  collegeId: z.number().optional(),
+  collegeName: z.string().default(""),
+  category: z.enum(["housing", "restaurant", "local_service"]),
+  name: z.string().min(1, "Name is required"),
+  photos: z.string().default("[]"),       // JSON array string
+  description: z.string().optional(),
+  address: z.string().optional(),
+  contactNumber: z.string().optional(),
+  googleMapsLink: z.string().optional(),
+  metadata: z.string().default("{}"),     // JSON object string
+  addedByModerator: z.string().default("Moderator"),
+  addedByModeratorId: z.number().optional(),
+});
+
+// POST /api/moderator/local-listings
+router.post("/moderator/local-listings", async (req, res): Promise<void> => {
+  const parsed = LocalListingSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
+
+  const [row] = await db.insert(localListingsTable).values(parsed.data).returning();
+
+  await writeAudit({
+    actorName: parsed.data.addedByModerator, actorRole: "low_admin",
+    action: "create_local_listing", entityType: "local_listing",
+    entityId: String(row.id), entityLabel: row.name,
+    afterState: JSON.stringify({ category: row.category, status: row.status }),
+    scope: row.collegeName || String(row.collegeId ?? ""),
+  });
+
+  res.status(201).json(row);
+});
+
+// PATCH /api/moderator/local-listings/:id
+router.patch("/moderator/local-listings/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = LocalListingSchema.partial().safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
+
+  const [row] = await db
+    .update(localListingsTable)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(eq(localListingsTable.id, id))
+    .returning();
+
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+
+  await writeAudit({
+    actorName: parsed.data.addedByModerator ?? "Moderator", actorRole: "low_admin",
+    action: "update_local_listing", entityType: "local_listing",
+    entityId: String(id), entityLabel: row.name,
+  });
+
+  res.json(row);
+});
+
+// PATCH /api/moderator/local-listings/:id/approve
+router.patch("/moderator/local-listings/:id/approve", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const { approvedBy = "Moderator" } = req.body as { approvedBy?: string };
+
+  const [before] = await db.select().from(localListingsTable).where(eq(localListingsTable.id, id));
+  if (!before) { res.status(404).json({ error: "Not found" }); return; }
+
+  const [row] = await db
+    .update(localListingsTable)
+    .set({ status: "approved", rejectionReason: null, updatedAt: new Date() })
+    .where(eq(localListingsTable.id, id))
+    .returning();
+
+  await writeAudit({
+    actorName: approvedBy, actorRole: "low_admin", action: "approve_local_listing",
+    entityType: "local_listing", entityId: String(id), entityLabel: before.name,
+    beforeState: before.status, afterState: "approved",
+    scope: before.collegeName || String(before.collegeId ?? ""),
+  });
+
+  res.json(row);
+});
+
+// PATCH /api/moderator/local-listings/:id/reject
+const RejectListingSchema = z.object({
+  rejectedBy: z.string().default("Moderator"),
+  rejectionReason: z.string().min(1, "Reason is required"),
+});
+
+router.patch("/moderator/local-listings/:id/reject", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = RejectListingSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
+
+  const [before] = await db.select().from(localListingsTable).where(eq(localListingsTable.id, id));
+  if (!before) { res.status(404).json({ error: "Not found" }); return; }
+
+  const [row] = await db
+    .update(localListingsTable)
+    .set({ status: "rejected", rejectionReason: parsed.data.rejectionReason, updatedAt: new Date() })
+    .where(eq(localListingsTable.id, id))
+    .returning();
+
+  await writeAudit({
+    actorName: parsed.data.rejectedBy, actorRole: "low_admin", action: "reject_local_listing",
+    entityType: "local_listing", entityId: String(id), entityLabel: before.name,
+    beforeState: before.status, afterState: "rejected",
+    scope: before.collegeName || String(before.collegeId ?? ""),
+  });
+
+  res.json(row);
+});
+
+// DELETE /api/moderator/local-listings/:id — soft delete
+router.delete("/moderator/local-listings/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const [row] = await db
+    .update(localListingsTable)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(localListingsTable.id, id))
+    .returning();
+
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+
+  await writeAudit({
+    actorName: (req.body as { deletedBy?: string })?.deletedBy ?? "Moderator",
+    actorRole: "low_admin", action: "delete_local_listing",
+    entityType: "local_listing", entityId: String(id), entityLabel: row.name,
+    afterState: "deleted",
+  });
+
   res.json({ ok: true });
 });
 

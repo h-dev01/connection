@@ -5,3 +5,4 @@ export * from "./study";
 export * from "./marketplace";
 export * from "./clubs";
 export * from "./admin";
+export * from "./local-listings";
