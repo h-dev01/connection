@@ -82,6 +82,12 @@ async function deleteMaterial(id: number): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete material");
 }
 
+async function fetchMyMaterials(uploadedBy: string): Promise<StudyMaterial[]> {
+  const res = await fetch(`/api/study/my-materials?uploadedBy=${encodeURIComponent(uploadedBy)}`);
+  if (!res.ok) throw new Error("Failed to load your submissions");
+  return res.json();
+}
+
 async function fetchFeatureStatus(): Promise<Record<string, boolean>> {
   const res = await fetch("/api/study/feature-status");
   if (!res.ok) throw new Error("Failed to load feature status");
@@ -154,6 +160,7 @@ function useCascadingAcademic(fixedCollegeId?: number | null) {
 function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
   const { addSubmission } = useSubmissions();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const isMod = user?.role === "low_admin" || user?.role === "admin";
 
   // Students: college locked to profile; mod/admin: free dropdown
@@ -239,6 +246,8 @@ function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
         uploaderColor:   AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)],
         submittedAt:     "Just now",
       });
+      // Refresh "My Submissions" tab from DB so it persists after a page reload
+      queryClient.invalidateQueries({ queryKey: ["my-materials"] });
       setSubmitting(false); setDone(true);
       setTimeout(onSuccess, 1800);
     } catch {
@@ -433,11 +442,31 @@ function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
 
 /* ─── My Submissions list ────────────────────────────────── */
 function MySubmissions() {
-  const { submissions } = useSubmissions();
   const { user } = useAuth();
-  const mine = submissions.filter((s) => s.uploadedBy === (user?.name ?? ""));
+  const name = user?.name ?? "";
 
-  if (mine.length === 0) {
+  const { data: dbItems = [], isLoading } = useQuery<StudyMaterial[]>({
+    queryKey: ["my-materials", name],
+    queryFn: () => fetchMyMaterials(name),
+    enabled: !!name,
+    staleTime: 10_000,
+  });
+
+  // Also show anything added this session that the DB query might not have returned yet
+  const { submissions } = useSubmissions();
+  const sessionMine = submissions.filter(
+    (s) => s.uploadedBy === name && s.id.startsWith("s_"),
+  );
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-slate-400 text-sm">Loading your submissions…</p>
+      </div>
+    );
+  }
+
+  if (dbItems.length === 0 && sessionMine.length === 0) {
     return (
       <div className="text-center py-16">
         <FileText className="h-10 w-10 text-slate-200 mx-auto mb-3" />
@@ -448,11 +477,13 @@ function MySubmissions() {
 
   return (
     <div className="space-y-3 max-w-2xl">
-      {mine.map((s) => {
-        const { label, cls } = STATUS_STYLES[s.status];
+      {/* DB-backed submissions (survive page refresh) */}
+      {(dbItems as (StudyMaterial & { status?: string; rejectionReason?: string })[]).map((s) => {
+        const status = (s.status ?? "pending") as keyof typeof STATUS_STYLES;
+        const { label, cls } = STATUS_STYLES[status] ?? STATUS_STYLES.pending;
         return (
           <motion.div
-            key={s.id}
+            key={`db-${s.id}`}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm"
@@ -466,10 +497,12 @@ function MySubmissions() {
                   <p className="font-semibold text-slate-900 text-sm">{s.title}</p>
                   <Badge className={cn("text-xs border flex-shrink-0", cls)}>{label}</Badge>
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5">{s.course} · {s.semester} · Submitted {s.submittedAt}</p>
-                {s.reviewNote && (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {s.course} · {s.semester} · Submitted {new Date(s.createdAt).toLocaleDateString()}
+                </p>
+                {s.rejectionReason && (
                   <p className="text-xs mt-2 p-2 rounded-lg bg-slate-50 border border-slate-100 text-slate-600">
-                    <span className="font-semibold">Reviewer note:</span> {s.reviewNote}
+                    <span className="font-semibold">Reviewer note:</span> {s.rejectionReason}
                   </p>
                 )}
               </div>
@@ -477,6 +510,33 @@ function MySubmissions() {
           </motion.div>
         );
       })}
+      {/* Session-only optimistic items (not yet in DB response) */}
+      {sessionMine
+        .filter((s) => !dbItems.some((d) => d.title === s.title))
+        .map((s) => {
+          const { label, cls } = STATUS_STYLES[s.status];
+          return (
+            <motion.div
+              key={s.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm opacity-75"
+            >
+              <div className="flex items-start gap-4">
+                <div className="p-2.5 bg-blue-50 rounded-xl">
+                  <FileText className="h-5 w-5 text-blue-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-slate-900 text-sm">{s.title}</p>
+                    <Badge className={cn("text-xs border flex-shrink-0", cls)}>{label}</Badge>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">{s.course} · {s.semester} · Submitted {s.submittedAt}</p>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
     </div>
   );
 }

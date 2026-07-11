@@ -63,6 +63,19 @@ router.get("/study/materials", async (req, res): Promise<void> => {
   res.json(result);
 });
 
+// GET /study/my-materials?uploadedBy= — returns all statuses for the submitting user
+router.get("/study/my-materials", async (req, res): Promise<void> => {
+  const uploadedBy = (req.query.uploadedBy as string | undefined)?.trim();
+  if (!uploadedBy) { res.status(400).json({ error: "uploadedBy is required" }); return; }
+  const materials = await db
+    .select()
+    .from(studyMaterialsTable)
+    .where(eq(studyMaterialsTable.uploadedBy, uploadedBy))
+    .orderBy(desc(studyMaterialsTable.createdAt))
+    .limit(100);
+  res.json(materials);
+});
+
 // GET /study/recent — for dashboard widget (approved only)
 router.get("/study/recent", async (_req, res): Promise<void> => {
   const materials = await db
