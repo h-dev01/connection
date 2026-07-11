@@ -821,7 +821,25 @@ function statusColor(s: string) {
 }
 
 function blankForm(cat: Category = "housing") {
-  return { category: cat, name: "", photos: [] as string[], description: "", address: "", contactNumber: "", googleMapsLink: "", metadata: {} as Record<string, unknown>, collegeId: undefined as number | undefined, collegeName: "" };
+  return {
+    category: cat, name: "", photos: [] as string[], description: "",
+    address: "", contactNumber: "", googleMapsLink: "",
+    metadata: {} as Record<string, unknown>,
+    collegeId: undefined as number | undefined, collegeName: "",
+    priorityScore: 0, displayDate: "",
+  };
+}
+
+/** ISO datetime → "YYYY-MM-DDThh:mm" for <input type="datetime-local"> */
+function toDatetimeLocal(iso: string | null | undefined): string {
+  if (!iso) return "";
+  try { return new Date(iso).toISOString().slice(0, 16); } catch { return ""; }
+}
+
+/** "YYYY-MM-DDThh:mm" → full ISO string for the API */
+function fromDatetimeLocal(v: string): string {
+  if (!v) return "";
+  return new Date(v).toISOString();
 }
 
 function ListingsTab({ userName, userId }: { userName: string; userId?: number }) {
@@ -890,7 +908,12 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
     let photos: string[] = [];
     try { metadata = JSON.parse(listing.metadata || "{}"); } catch { /* */ }
     try { photos   = JSON.parse(listing.photos   || "[]"); } catch { /* */ }
-    setForm({ ...listing, metadata, photos });
+    setForm({
+      ...listing,
+      metadata, photos,
+      priorityScore: listing.priorityScore ?? 0,
+      displayDate: toDatetimeLocal(listing.displayDate),
+    });
     setDialog({ mode: "edit", listing });
   };
 
@@ -906,6 +929,8 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
       metadata: JSON.stringify(form.metadata),
       addedByModerator:   userName,
       addedByModeratorId: userId,
+      priorityScore: Number(form.priorityScore) || 0,
+      displayDate: form.displayDate ? fromDatetimeLocal(form.displayDate) : "",
     };
     const isAdd = dialog?.mode === "add";
     const url    = isAdd ? "/api/moderator/local-listings" : `/api/moderator/local-listings/${dialog?.listing?.id}`;
@@ -1149,6 +1174,17 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                       <span className="text-red-400">· Rejected: {listing.rejectionReason}</span>
                     )}
                   </div>
+                  {/* Internal ordering info — moderator-only */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-500">
+                      Priority&nbsp;<span className="text-slate-700">{listing.priorityScore ?? 0}</span>
+                    </span>
+                    {listing.displayDate && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-500">
+                        Display&nbsp;<span className="text-slate-700">{new Date(listing.displayDate).toLocaleDateString()}</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Actions */}
@@ -1340,6 +1376,36 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                 </div>
               </div>
             )}
+
+            {/* ── Internal ordering fields (moderator-only) ─────── */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Internal Settings</span>
+                <span className="text-[10px] text-slate-400 font-normal">(not visible to students)</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-semibold text-slate-700 block mb-1">Priority Score</label>
+                  <Input
+                    type="number" min={0}
+                    value={form.priorityScore}
+                    onChange={e => setF({ priorityScore: Number(e.target.value) })}
+                    placeholder="0"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Higher = appears first. Default: 0.</p>
+                </div>
+                <div>
+                  <label className="text-sm font-semibold text-slate-700 block mb-1">Display Date</label>
+                  <input
+                    type="datetime-local"
+                    value={form.displayDate}
+                    onChange={e => setF({ displayDate: e.target.value })}
+                    className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Tiebreaker when priority scores match. Newer wins.</p>
+                </div>
+              </div>
+            </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>

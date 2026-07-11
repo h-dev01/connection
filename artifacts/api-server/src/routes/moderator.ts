@@ -2,7 +2,7 @@
  * Moderator routes — feature toggles, material approval, schedules.
  */
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -376,19 +376,17 @@ router.get("/moderator/local-listings", async (req, res): Promise<void> => {
   const { category, status, search, roomType, gender, cuisineType, deliveryAvailable, serviceType } = req.query as Record<string, string>;
 
   let query = db.select().from(localListingsTable).$dynamic();
-  const conditions = [
-    // exclude soft-deleted
-  ] as ReturnType<typeof eq>[];
-
-  // Only show non-deleted
-  conditions.push(eq(localListingsTable.deletedAt, null as unknown as Date));
+  const conditions: ReturnType<typeof isNull | typeof eq>[] = [isNull(localListingsTable.deletedAt)];
 
   if (collegeId) conditions.push(eq(localListingsTable.collegeId, collegeId));
-  if (category) conditions.push(eq(localListingsTable.category, category));
-  if (status) conditions.push(eq(localListingsTable.status, status));
+  if (category)  conditions.push(eq(localListingsTable.category, category));
+  if (status)    conditions.push(eq(localListingsTable.status, status));
 
   query = query.where(and(...conditions));
-  let rows = await query.orderBy(desc(localListingsTable.createdAt)).limit(500);
+  // Order: higher priorityScore first, then newer displayDate, then newer createdAt
+  let rows = await query
+    .orderBy(desc(localListingsTable.priorityScore), desc(localListingsTable.displayDate), desc(localListingsTable.createdAt))
+    .limit(500);
 
   // JS-side filters for search and metadata fields
   if (search) {
@@ -431,6 +429,9 @@ const LocalListingSchema = z.object({
   metadata: z.string().default("{}"),     // JSON object string
   addedByModerator: z.string().default("Moderator"),
   addedByModeratorId: z.number().optional(),
+  // Internal ordering fields — moderator-only, never shown to students
+  priorityScore: z.number().int().min(0).default(0),
+  displayDate: z.string().datetime({ offset: true }).optional().or(z.literal("")).transform(v => v ? new Date(v) : null),
 });
 
 // POST /api/moderator/local-listings

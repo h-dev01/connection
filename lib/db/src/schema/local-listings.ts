@@ -1,6 +1,11 @@
 /**
  * Local Listings — Housing, Restaurants, Local Services near campus.
  * Managed by moderators; visible to students once approved.
+ *
+ * Internal ordering fields (moderator-only, never exposed to students):
+ *   priorityScore — higher value surfaces the listing earlier.
+ *   displayDate   — tiebreaker when two listings share the same priorityScore;
+ *                   newer displayDate wins.
  */
 import {
   pgTable, serial, text, integer, timestamp, index,
@@ -31,6 +36,15 @@ export const localListingsTable = pgTable("local_listings", {
   rejectionReason: text("rejection_reason"),
   addedByModerator: text("added_by_moderator").notNull().default("Moderator"),
   addedByModeratorId: integer("added_by_moderator_id"),
+
+  // ── Internal ordering fields (moderator-only) ──────────────
+  // Higher priorityScore → listed first.
+  priorityScore: integer("priority_score").notNull().default(0),
+  // Tiebreaker: when two listings share the same priorityScore,
+  // the one with the newer displayDate appears first.
+  // Moderators set this explicitly; defaults to row creation time.
+  displayDate: timestamp("display_date", { withTimezone: true }),
+
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -38,6 +52,7 @@ export const localListingsTable = pgTable("local_listings", {
   index("local_listings_college_id_idx").on(t.collegeId),
   index("local_listings_category_idx").on(t.category),
   index("local_listings_status_idx").on(t.status),
+  index("local_listings_priority_idx").on(t.priorityScore),
 ]);
 
 export type LocalListing = typeof localListingsTable.$inferSelect;
