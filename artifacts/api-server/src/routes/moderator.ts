@@ -28,22 +28,42 @@ async function writeAudit(entry: {
    STUDY MATERIALS — approval queue
 ══════════════════════════════════════════════════════════════ */
 
-// GET /api/moderator/materials?status=pending&course=...&semester=...
+// GET /api/moderator/materials?status=&collegeId=&courseId=&semesterId=&subjectId=&search=
 router.get("/moderator/materials", async (req, res): Promise<void> => {
-  const { status, course, semester } = req.query as Record<string, string>;
+  const { status, course, semester, search } = req.query as Record<string, string>;
+  const toInt = (v: string | undefined) => { const n = parseInt(v ?? "", 10); return isNaN(n) ? undefined : n; };
+  const collegeId  = toInt(req.query.collegeId  as string);
+  const courseId   = toInt(req.query.courseId   as string);
+  const semesterId = toInt(req.query.semesterId as string);
+  const subjectId  = toInt(req.query.subjectId  as string);
 
   let query = db.select().from(studyMaterialsTable).$dynamic();
 
   const conditions = [];
-  if (status) conditions.push(eq(studyMaterialsTable.status, status));
-  if (course) conditions.push(eq(studyMaterialsTable.course, course));
-  if (semester) conditions.push(eq(studyMaterialsTable.semester, semester));
+  if (status)     conditions.push(eq(studyMaterialsTable.status, status));
+  // FK-based filters (from cascading dropdowns)
+  if (collegeId)  conditions.push(eq(studyMaterialsTable.collegeId,  collegeId));
+  if (courseId)   conditions.push(eq(studyMaterialsTable.courseId,   courseId));
+  if (semesterId) conditions.push(eq(studyMaterialsTable.semesterId, semesterId));
+  if (subjectId)  conditions.push(eq(studyMaterialsTable.subjectId,  subjectId));
+  // Legacy text filters (backwards compat)
+  if (!collegeId && !courseId && course) conditions.push(eq(studyMaterialsTable.course, course));
+  if (!semesterId && semester) conditions.push(eq(studyMaterialsTable.semester, semester));
 
-  if (conditions.length > 0) {
-    query = query.where(and(...conditions));
+  if (conditions.length > 0) query = query.where(and(...conditions));
+
+  let rows = await query.orderBy(desc(studyMaterialsTable.createdAt)).limit(200);
+
+  // JS-side text search on title / subject
+  if (search) {
+    const q = search.toLowerCase();
+    rows = rows.filter(r =>
+      r.title.toLowerCase().includes(q) ||
+      (r.subject ?? "").toLowerCase().includes(q) ||
+      (r.uploadedBy ?? "").toLowerCase().includes(q)
+    );
   }
 
-  const rows = await query.orderBy(desc(studyMaterialsTable.createdAt)).limit(100);
   res.json(rows);
 });
 
