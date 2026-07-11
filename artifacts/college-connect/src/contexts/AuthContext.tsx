@@ -35,6 +35,9 @@ export interface AuthUser {
   reputationScore?: number;
   reputationLevel?: string;
   verified?: boolean;
+  collegeId?: number;
+  courseId?: number;
+  semesterId?: number;
 }
 
 export interface SignupData {
@@ -128,6 +131,9 @@ function apiUserToAuthUser(u: Record<string, unknown>): AuthUser {
     reputationScore: u.reputationScore as number | undefined,
     reputationLevel: u.reputationLevel as string | undefined,
     verified: u.verified as boolean | undefined,
+    collegeId: u.collegeId as number | undefined,
+    courseId: u.courseId as number | undefined,
+    semesterId: u.semesterId as number | undefined,
   };
 }
 

@@ -50,8 +50,23 @@ const TYPE_COLORS: Record<string, string> = {
   syllabus: "text-slate-500 bg-slate-100",
 };
 
-async function fetchMaterials(): Promise<StudyMaterial[]> {
-  const res = await fetch("/api/study/materials");
+interface FilterParams {
+  collegeId?: number | null;
+  courseId?:  number | null;
+  semesterId?: number | null;
+  subjectId?:  number | null;
+  search?: string;
+}
+
+async function fetchMaterials(filters?: FilterParams): Promise<StudyMaterial[]> {
+  const p = new URLSearchParams();
+  if (filters?.collegeId)  p.set("collegeId",  String(filters.collegeId));
+  if (filters?.courseId)   p.set("courseId",   String(filters.courseId));
+  if (filters?.semesterId) p.set("semesterId", String(filters.semesterId));
+  if (filters?.subjectId)  p.set("subjectId",  String(filters.subjectId));
+  if (filters?.search)     p.set("search",     filters.search);
+  const qs = p.toString();
+  const res = await fetch(`/api/study/materials${qs ? `?${qs}` : ""}`);
   if (!res.ok) throw new Error("Failed to load study materials");
   return res.json();
 }
@@ -97,74 +112,145 @@ const STATUS_STYLES = {
 
 const AVATAR_COLORS = ["bg-blue-500","bg-violet-500","bg-emerald-500","bg-rose-500","bg-amber-500"];
 
+/* ─── Cascading academic selects hook ───────────────────── */
+interface AcademicOption { id: number; name: string; code?: string }
+
+function useCascadingAcademic(fixedCollegeId?: number | null) {
+  const [collegeId,  setCollegeIdRaw]  = useState<number | null>(fixedCollegeId ?? null);
+  const [courseId,   setCourseIdRaw]   = useState<number | null>(null);
+  const [semesterId, setSemesterIdRaw] = useState<number | null>(null);
+  const [subjectId,  setSubjectIdRaw]  = useState<number | null>(null);
+
+  const { data: colleges = [] }  = useQuery<AcademicOption[]>({
+    queryKey: ["pub-colleges"],
+    queryFn: () => fetch("/api/colleges").then(r => r.json()),
+    enabled: fixedCollegeId == null, // only fetch list when college is not locked
+  });
+  const { data: courses = [] }   = useQuery<AcademicOption[]>({
+    queryKey: ["pub-courses", collegeId],
+    queryFn: () => fetch(`/api/colleges/${collegeId}/courses`).then(r => r.json()),
+    enabled: !!collegeId,
+  });
+  const { data: semesters = [] } = useQuery<AcademicOption[]>({
+    queryKey: ["pub-semesters", courseId],
+    queryFn: () => fetch(`/api/courses/${courseId}/semesters`).then(r => r.json()),
+    enabled: !!courseId,
+  });
+  const { data: subjects = [] }  = useQuery<AcademicOption[]>({
+    queryKey: ["pub-subjects", semesterId],
+    queryFn: () => fetch(`/api/semesters/${semesterId}/subjects`).then(r => r.json()),
+    enabled: !!semesterId,
+  });
+
+  const setCollege  = (id: number | null) => { setCollegeIdRaw(id);  setCourseIdRaw(null); setSemesterIdRaw(null); setSubjectIdRaw(null); };
+  const setCourse   = (id: number | null) => { setCourseIdRaw(id);   setSemesterIdRaw(null); setSubjectIdRaw(null); };
+  const setSemester = (id: number | null) => { setSemesterIdRaw(id); setSubjectIdRaw(null); };
+  const setSubject  = (id: number | null) => setSubjectIdRaw(id);
+
+  return { colleges, courses, semesters, subjects, collegeId, courseId, semesterId, subjectId, setCollege, setCourse, setSemester, setSubject };
+}
+
 /* ─── Contributor Upload Form ───────────────────────────── */
 function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
   const { addSubmission } = useSubmissions();
   const { user } = useAuth();
-  const [form, setForm] = useState({
-    title: "", description: "", subject: "", course: "",
-    semester: "", type: "" as MaterialType | "",
-  });
+  const isMod = user?.role === "low_admin" || user?.role === "admin";
+
+  // Students: college locked to profile; mod/admin: free dropdown
+  const lockedCollegeId   = !isMod ? (user?.collegeId ?? null) : null;
+  const lockedCollegeName = !isMod ? (user?.college ?? "") : "";
+
+  const ac = useCascadingAcademic(lockedCollegeId);
+
+  const [form, setForm] = useState({ title: "", description: "", type: "" as MaterialType | "" });
   const [fileName, setFileName] = useState("");
   const [dragging, setDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
 
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const effectiveCollegeId = lockedCollegeId ?? ac.collegeId;
+
+  const selectedCourse   = ac.courses.find(c => c.id === ac.courseId);
+  const selectedSemester = ac.semesters.find(s => s.id === ac.semesterId);
+  const selectedSubject  = ac.subjects.find(s => s.id === ac.subjectId);
 
   const valid =
     form.title.trim() &&
-    form.subject.trim() &&
-    form.course.trim() &&
-    form.semester &&
     form.type &&
-    fileName;
+    fileName &&
+    effectiveCollegeId &&
+    ac.courseId &&
+    ac.semesterId &&
+    ac.subjectId;
 
-  const handleFakeDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
     const file = e.dataTransfer.files?.[0];
     if (file) setFileName(file.name);
   };
-
-  const handleFakeFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) setFileName(file.name);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid) return;
-    setSubmitting(true);
-    // Simulate upload delay
-    setTimeout(() => {
-      addSubmission({
-        title: form.title,
-        description: form.description,
-        subject: form.subject,
-        course: form.course.toUpperCase(),
-        semester: form.semester,
-        type: form.type as MaterialType,
-        fileName,
-        fileSize: "—",
-        uploadedBy: user?.name ?? "Anonymous",
-        uploaderInitials: user?.initials ?? "?",
-        uploaderColor: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)],
-        submittedAt: "Just now",
+    setSubmitting(true); setError("");
+    try {
+      const res = await fetch("/api/study/materials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title:       form.title,
+          description: form.description,
+          subject:     selectedSubject?.name  ?? "",
+          course:      selectedCourse?.code   ?? "",
+          semester:    selectedSemester?.name ?? "",
+          fileType:    form.type,
+          fileSizeMb:  0,
+          uploadedBy:  user?.name ?? "Anonymous",
+          collegeId:   effectiveCollegeId,
+          courseId:    ac.courseId,
+          semesterId:  ac.semesterId,
+          subjectId:   ac.subjectId,
+        }),
       });
-      setSubmitting(false);
-      setDone(true);
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error ?? "Upload failed. Please try again.");
+        setSubmitting(false); return;
+      }
+      // Optimistic local state for "My Submissions" tab
+      addSubmission({
+        title:           form.title,
+        description:     form.description,
+        subject:         selectedSubject?.name  ?? "",
+        course:          selectedCourse?.code   ?? "",
+        semester:        selectedSemester?.name ?? "",
+        type:            form.type as MaterialType,
+        fileName,
+        fileSize:        "—",
+        uploadedBy:      user?.name ?? "Anonymous",
+        uploaderInitials: user?.initials ?? "?",
+        uploaderColor:   AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)],
+        submittedAt:     "Just now",
+      });
+      setSubmitting(false); setDone(true);
       setTimeout(onSuccess, 1800);
-    }, 1000);
+    } catch {
+      setError("Network error. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   if (done) {
     return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="text-center py-16 space-y-3"
-      >
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="text-center py-16 space-y-3">
         <CheckCircle2 className="h-14 w-14 text-emerald-500 mx-auto" />
         <h3 className="text-xl font-bold text-slate-900">Submitted for Review!</h3>
         <p className="text-slate-500 text-sm max-w-sm mx-auto">
@@ -176,22 +262,26 @@ function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5 max-w-2xl">
+
+      {/* Error banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2 items-center text-red-700 text-sm">
+          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {error}
+        </div>
+      )}
+
       {/* Upload zone */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
-        onDrop={handleFakeDrop}
+        onDrop={handleDrop}
         className={cn(
           "border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer relative",
           dragging ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/40"
         )}
       >
-        <input
-          type="file"
-          accept=".pdf,.ppt,.pptx,.doc,.docx,.zip"
-          onChange={handleFakeFileInput}
-          className="absolute inset-0 opacity-0 cursor-pointer"
-        />
+        <input type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,.zip"
+          onChange={handleFileInput} className="absolute inset-0 opacity-0 cursor-pointer" />
         {fileName ? (
           <div className="flex items-center justify-center gap-3">
             <FileText className="h-8 w-8 text-blue-500" />
@@ -199,11 +289,8 @@ function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
               <p className="font-semibold text-slate-900">{fileName}</p>
               <p className="text-xs text-slate-400">Ready to upload</p>
             </div>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setFileName(""); }}
-              className="ml-2 text-slate-400 hover:text-red-500"
-            >
+            <button type="button" onClick={(e) => { e.stopPropagation(); setFileName(""); }}
+              className="ml-2 text-slate-400 hover:text-red-500">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -219,68 +306,101 @@ function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
         )}
       </div>
 
-      {/* Title */}
+      {/* Title + Description */}
       <div>
         <label className="text-sm font-semibold text-slate-700 block mb-1.5">Material Title *</label>
-        <Input
-          placeholder="e.g. Operating Systems Unit 3 Complete Notes"
-          value={form.title}
-          onChange={(e) => set("title", e.target.value)}
-          required
-        />
+        <Input placeholder="e.g. Operating Systems Unit 3 Complete Notes"
+          value={form.title} onChange={(e) => set("title", e.target.value)} required />
       </div>
-
-      {/* Description */}
       <div>
         <label className="text-sm font-semibold text-slate-700 block mb-1.5">Description</label>
-        <textarea
-          placeholder="What does this material cover? What makes it useful?"
-          value={form.description}
-          onChange={(e) => set("description", e.target.value)}
-          rows={3}
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <textarea placeholder="What does this material cover? What makes it useful?"
+          value={form.description} onChange={(e) => set("description", e.target.value)}
+          rows={3} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" />
       </div>
 
-      {/* 4 selects in a grid */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Material type */}
+      <div>
+        <label className="text-sm font-semibold text-slate-700 block mb-1.5">Material Type *</label>
+        <Select onValueChange={(v) => set("type", v)} required>
+          <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+          <SelectContent>
+            {MATERIAL_TYPES.map(({ value, label }) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* ── Academic cascade ── */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4">
+        <p className="text-sm font-bold text-slate-700">Academic Details *</p>
+
+        {/* College */}
+        {isMod ? (
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">College</label>
+            <Select onValueChange={(v) => ac.setCollege(Number(v))}>
+              <SelectTrigger className="bg-white"><SelectValue placeholder="Select college" /></SelectTrigger>
+              <SelectContent>
+                {ac.colleges.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div>
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">College</label>
+            <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+              {lockedCollegeName || <span className="text-slate-400 italic">Set in your profile</span>}
+            </div>
+          </div>
+        )}
+
+        {/* Course */}
         <div>
-          <label className="text-sm font-semibold text-slate-700 block mb-1.5">Type *</label>
-          <Select onValueChange={(v) => set("type", v)} required>
-            <SelectTrigger><SelectValue placeholder="Material type" /></SelectTrigger>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Course</label>
+          <Select
+            onValueChange={(v) => ac.setCourse(Number(v))}
+            disabled={!effectiveCollegeId || ac.courses.length === 0}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue placeholder={!effectiveCollegeId ? "Select college first" : ac.courses.length === 0 ? "No courses available" : "Select course"} />
+            </SelectTrigger>
             <SelectContent>
-              {MATERIAL_TYPES.map(({ value, label }) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
+              {ac.courses.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name} ({c.code})</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
+
+        {/* Semester */}
         <div>
-          <label className="text-sm font-semibold text-slate-700 block mb-1.5">Subject *</label>
-          <Input
-            placeholder="e.g. Computer Science"
-            value={form.subject}
-            onChange={(e) => set("subject", e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-slate-700 block mb-1.5">Course Code *</label>
-          <Input
-            placeholder="e.g. CS401"
-            value={form.course}
-            onChange={(e) => set("course", e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label className="text-sm font-semibold text-slate-700 block mb-1.5">Semester *</label>
-          <Select onValueChange={(v) => set("semester", v)} required>
-            <SelectTrigger><SelectValue placeholder="Select semester" /></SelectTrigger>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Semester</label>
+          <Select
+            onValueChange={(v) => ac.setSemester(Number(v))}
+            disabled={!ac.courseId || ac.semesters.length === 0}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue placeholder={!ac.courseId ? "Select course first" : ac.semesters.length === 0 ? "No semesters available" : "Select semester"} />
+            </SelectTrigger>
             <SelectContent>
-              {[1,2,3,4,5,6,7,8].map((s) => (
-                <SelectItem key={s} value={`Semester ${s}`}>Semester {s}</SelectItem>
-              ))}
+              {ac.semesters.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Subject */}
+        <div>
+          <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Subject</label>
+          <Select
+            onValueChange={(v) => ac.setSubject(Number(v))}
+            disabled={!ac.semesterId || ac.subjects.length === 0}
+          >
+            <SelectTrigger className="bg-white">
+              <SelectValue placeholder={!ac.semesterId ? "Select semester first" : ac.subjects.length === 0 ? "No subjects available" : "Select subject"} />
+            </SelectTrigger>
+            <SelectContent>
+              {ac.subjects.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name} ({s.code})</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -294,11 +414,8 @@ function ContributorForm({ onSuccess }: { onSuccess: () => void }) {
         </p>
       </div>
 
-      <Button
-        type="submit"
-        disabled={!valid || submitting}
-        className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-bold"
-      >
+      <Button type="submit" disabled={!valid || submitting}
+        className="w-full bg-blue-600 hover:bg-blue-700 h-11 font-bold">
         {submitting ? (
           <span className="flex items-center gap-2">
             <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -491,9 +608,23 @@ export default function Study() {
   const [contribTab, setContribTab] = useState<"upload" | "mine" | "review">("upload");
   const queryClient = useQueryClient();
 
+  // ── Search / filter state ──
+  const [search, setSearch] = useState("");
+  // Cascading academic selects for the browse/search panel
+  // Students default to their own college; mod/admin start unfiltered
+  const fac = useCascadingAcademic(!isMod ? (user?.collegeId ?? null) : null);
+
+  const activeFilter: FilterParams = {
+    collegeId:  fac.collegeId  ?? (!isMod ? user?.collegeId : undefined),
+    courseId:   fac.courseId   ?? undefined,
+    semesterId: fac.semesterId ?? undefined,
+    subjectId:  fac.subjectId  ?? undefined,
+    search: search || undefined,
+  };
+
   const { data: dbMaterials = [], isLoading: materialsLoading } = useQuery({
-    queryKey: ["study-materials"],
-    queryFn: fetchMaterials,
+    queryKey: ["study-materials", activeFilter],
+    queryFn: () => fetchMaterials(activeFilter),
   });
 
   const { data: featureStatus = {}, isLoading: featureStatusLoading } = useQuery({
@@ -609,33 +740,82 @@ export default function Study() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    {/* Filters */}
-                    <div className="flex flex-wrap gap-3 mb-6">
-                      <div className="relative flex-1 min-w-[200px]">
+                    {/* ── Cascading Filters ── */}
+                    <div className="space-y-3 mb-6">
+                      {/* Text search */}
+                      <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="Search materials..." className="pl-9 bg-slate-50 border-slate-200" />
+                        <Input
+                          placeholder="Search by title or subject…"
+                          value={search}
+                          onChange={e => setSearch(e.target.value)}
+                          className="pl-9 bg-slate-50 border-slate-200"
+                        />
                       </div>
-                      <Select defaultValue="all">
-                        <SelectTrigger className="w-[140px] bg-slate-50 border-slate-200">
-                          <SelectValue placeholder="Subject" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Subjects</SelectItem>
-                          <SelectItem value="cs">Computer Science</SelectItem>
-                          <SelectItem value="ee">Electronics</SelectItem>
-                          <SelectItem value="me">Mechanical</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Select defaultValue="sem5">
-                        <SelectTrigger className="w-[140px] bg-slate-50 border-slate-200">
-                          <SelectValue placeholder="Semester" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {[4,5,6,7,8].map((s) => (
-                            <SelectItem key={s} value={`sem${s}`}>Semester {s}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {/* Cascade row */}
+                      <div className="flex flex-wrap gap-2">
+                        {/* College — only show for mod/admin; students are locked */}
+                        {isMod && (
+                          <Select onValueChange={v => fac.setCollege(v === "all" ? null : Number(v))}>
+                            <SelectTrigger className="w-[160px] bg-slate-50 border-slate-200 text-sm">
+                              <SelectValue placeholder="All Colleges" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Colleges</SelectItem>
+                              {fac.colleges.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {/* Course */}
+                        <Select
+                          onValueChange={v => fac.setCourse(v === "all" ? null : Number(v))}
+                          disabled={!fac.collegeId && !(!isMod && user?.collegeId)}
+                        >
+                          <SelectTrigger className="w-[160px] bg-slate-50 border-slate-200 text-sm">
+                            <SelectValue placeholder="All Courses" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Courses</SelectItem>
+                            {fac.courses.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        {/* Semester */}
+                        <Select
+                          onValueChange={v => fac.setSemester(v === "all" ? null : Number(v))}
+                          disabled={!fac.courseId}
+                        >
+                          <SelectTrigger className="w-[150px] bg-slate-50 border-slate-200 text-sm">
+                            <SelectValue placeholder="All Semesters" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Semesters</SelectItem>
+                            {fac.semesters.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        {/* Subject */}
+                        <Select
+                          onValueChange={v => fac.setSubject(v === "all" ? null : Number(v))}
+                          disabled={!fac.semesterId}
+                        >
+                          <SelectTrigger className="w-[160px] bg-slate-50 border-slate-200 text-sm">
+                            <SelectValue placeholder="All Subjects" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Subjects</SelectItem>
+                            {fac.subjects.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        {/* Clear filters */}
+                        {(fac.courseId || fac.semesterId || fac.subjectId || search) && (
+                          <button
+                            type="button"
+                            onClick={() => { fac.setCourse(null); setSearch(""); }}
+                            className="text-xs text-slate-400 hover:text-slate-700 px-2 underline underline-offset-2"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-3">

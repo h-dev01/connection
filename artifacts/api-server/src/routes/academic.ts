@@ -151,6 +151,25 @@ router.get("/courses/:id/semesters", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
+// GET /api/semesters/:id/subjects — active subjects for a semester (public, no auth)
+router.get("/semesters/:id/subjects", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id as string, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const rows = await db.select({
+    id: subjectsTable.id,
+    name: subjectsTable.name,
+    code: subjectsTable.code,
+    credits: subjectsTable.credits,
+  }).from(subjectsTable)
+    .where(and(
+      eq(subjectsTable.semesterId, id),
+      isNull(subjectsTable.deletedAt),
+      eq(subjectsTable.status, "active"),
+    ))
+    .orderBy(subjectsTable.name);
+  res.json(rows);
+});
+
 /* ══════════════════════════════════════════════════════════════
    COURSES
 ══════════════════════════════════════════════════════════════ */

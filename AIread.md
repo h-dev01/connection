@@ -644,6 +644,37 @@ summary, then bullet points naming the exact file(s)/table(s)/column(s)
 touched and what changed. Keep entries factual and short — this is a log, not
 a narrative; the "why" belongs in one clause, not a paragraph.
 
+- **2026-07-11 — Study Material upload + search with cascading academic dropdowns**
+  - `artifacts/college-connect/src/contexts/AuthContext.tsx`: added `collegeId`,
+    `courseId`, `semesterId` fields to `AuthUser` interface; mapped them from the
+    API response in `apiUserToAuthUser()` so downstream components can read them.
+  - `artifacts/api-server/src/routes/academic.ts`: added public
+    `GET /api/semesters/:id/subjects` endpoint (active subjects for a semester,
+    no auth required) — mirrors the existing `/colleges/:id/courses` and
+    `/courses/:id/semesters` public endpoints; subjects were previously admin-only.
+  - `artifacts/api-server/src/routes/study.ts`:
+    - `GET /study/materials` now accepts optional query params
+      (`collegeId`, `courseId`, `semesterId`, `subjectId`, `search`) to filter
+      results server-side; text `search` is a post-DB JS filter on title/subject.
+    - `POST /study/materials` schema extended: added `description`, `collegeId`,
+      `courseId`, `semesterId`, `subjectId` (all optional) so normalized FK ids
+      are stored alongside the existing legacy text fields.
+  - `artifacts/college-connect/src/features/study/StudyPage.tsx`:
+    - Added `useCascadingAcademic(fixedCollegeId?)` hook — drives four
+      React Query fetches (colleges→courses→semesters→subjects), each enabled
+      only when the parent is selected; resetting a parent clears all children.
+    - Rewrote `ContributorForm`: replaced free-text Subject/Course/Semester inputs
+      with cascading dropdowns backed by admin-added data. Students get their
+      college auto-locked from `user.collegeId` (read-only badge); mod/admin
+      get a free college dropdown. Form now calls `POST /api/study/materials`
+      (real API) in addition to `addSubmission()` (optimistic local context).
+    - Added `FilterParams` type + updated `fetchMaterials(filters?)` to build a
+      query-string and pass filter params to the backend.
+    - Student view search: replaced hardcoded Subject/Semester selects with live
+      cascading College (mod/admin only) → Course → Semester → Subject dropdowns
+      plus a free-text search box; all wired to `useQuery` so the materials list
+      refetches automatically on any filter change.
+
 - **2026-07-10 — Full documentation pass on AIread.md (no code/schema changes)**
   - `AIread.md`: added Section 5.0 (exact column-by-column reference for
     every DB table), Section 10 (full file index — one line per source file

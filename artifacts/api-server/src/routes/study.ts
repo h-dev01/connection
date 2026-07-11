@@ -31,15 +31,36 @@ router.get("/study/feature-status", async (_req, res): Promise<void> => {
   res.json(status);
 });
 
-// GET /study/materials — approved only for students
-router.get("/study/materials", async (_req, res): Promise<void> => {
+// GET /study/materials — approved only; supports ?collegeId=&courseId=&semesterId=&subjectId=&search=
+router.get("/study/materials", async (req, res): Promise<void> => {
+  const { collegeId, courseId, semesterId, subjectId, search } = req.query as Record<string, string>;
+
+  const toInt = (v: string | undefined) => { const n = parseInt(v ?? "", 10); return isNaN(n) ? undefined : n; };
+  const cid  = toInt(collegeId);
+  const crid = toInt(courseId);
+  const sid  = toInt(semesterId);
+  const suid = toInt(subjectId);
+
   const materials = await db
     .select()
     .from(studyMaterialsTable)
-    .where(eq(studyMaterialsTable.status, "approved"))
+    .where(and(
+      eq(studyMaterialsTable.status, "approved"),
+      cid  ? eq(studyMaterialsTable.collegeId,  cid)  : undefined,
+      crid ? eq(studyMaterialsTable.courseId,   crid) : undefined,
+      sid  ? eq(studyMaterialsTable.semesterId, sid)  : undefined,
+      suid ? eq(studyMaterialsTable.subjectId,  suid) : undefined,
+    ))
     .orderBy(desc(studyMaterialsTable.downloads))
-    .limit(50);
-  res.json(materials);
+    .limit(100);
+
+  const result = search
+    ? materials.filter(m =>
+        m.title.toLowerCase().includes(search.toLowerCase()) ||
+        (m.subject ?? "").toLowerCase().includes(search.toLowerCase()))
+    : materials;
+
+  res.json(result);
 });
 
 // GET /study/recent — for dashboard widget (approved only)
@@ -69,10 +90,15 @@ const CreateMaterial = z.object({
   subject: z.string().min(1),
   course: z.string().min(1),
   semester: z.string().min(1),
+  description: z.string().optional(),
   fileType: z.string().default("pdf"),
   fileSizeMb: z.number().default(0),
   uploadedBy: z.string().min(1),
   sharedWith: z.string().optional(),
+  collegeId:  z.number().int().optional(),
+  courseId:   z.number().int().optional(),
+  semesterId: z.number().int().optional(),
+  subjectId:  z.number().int().optional(),
 });
 
 router.post("/study/materials", async (req, res): Promise<void> => {
