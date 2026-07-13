@@ -5,8 +5,10 @@
  *   - Contributor Mode → upload notes/PDFs → goes to pending approval queue
  */
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import { BannerCarousel, type BannerLinkType } from "@/components/shared/BannerCarousel";
 import {
   BookOpen, Download, Star, Eye, Clock, Zap, FileText,
   CheckCircle2, TrendingUp, Users, Briefcase, Upload,
@@ -660,10 +662,22 @@ function ModReviewPanel() {
 }
 
 /* ─── Page ───────────────────────────────────────────────── */
+/** Maps a banner's linkType to the Marketplace tab it should deep-link into. */
+const LINK_TYPE_TO_TAB: Record<string, string> = {
+  restaurant: "restaurants",
+  pg: "housing",
+  local_service: "services",
+};
+
 export default function Study() {
   const { submissions } = useSubmissions();
   const { user } = useAuth();
   const isMod = user?.role === "low_admin" || user?.role === "admin";
+  const [, navigate] = useLocation();
+  const goToMarketplace = (linkType: BannerLinkType) => {
+    const tab = LINK_TYPE_TO_TAB[linkType];
+    navigate(tab ? `/marketplace?tab=${tab}` : "/marketplace");
+  };
   const [mode, setMode] = useState<"student" | "contributor">("student");
   const [contribTab, setContribTab] = useState<"upload" | "mine" | "review">("upload");
   const queryClient = useQueryClient();
@@ -787,6 +801,9 @@ export default function Study() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
           >
+            {/* Ad banner carousel — moderator-managed, see Moderator → Ad Banners */}
+            <BannerCarousel placement="study" onBannerClick={goToMarketplace} />
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">
                 {isOn("study_materials") && (

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import { BannerCarousel } from "@/components/shared/BannerCarousel";
 import {
   Search, Plus, Heart, Share2, ShieldCheck, Flame, Tag,
-  ArrowRight, ShoppingBag, Users, X, Save, Image as ImageIcon,
-  Phone, MapPin, Package, ChevronLeft, ChevronRight, Trash2,
+  ArrowRight, ShoppingBag, Users, X, Image as ImageIcon,
+  Phone, MapPin, Package, Trash2,
   Upload, Star, Camera, Edit2, UtensilsCrossed, Bike, ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -69,24 +71,10 @@ interface Restaurant {
   deliveryAvailable: boolean;
 }
 
-interface Banner {
-  id: string;
-  title: string;
-  subtitle: string;
-  cta: string;
-  image: string;
-  color: string;
-}
-
 /* Buy/sell listings and housing listings are now loaded live from the
  * marketplace API (see fetchListings / listingToProduct / listingToHousing
- * below) instead of hardcoded seed data. */
-
-const DEFAULT_BANNERS: Banner[] = [
-  { id: "b1", title: "End-of-Sem Sale 🎉", subtitle: "Students clearing out before exams — great deals on electronics, books, and more!", cta: "Browse Deals", image: "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200&q=80", color: "from-blue-900 to-indigo-900" },
-  { id: "b2", title: "Got Textbooks?", subtitle: "Sell your used books to junior students. Every listing gets 100 CC Points.", cta: "Post a Book", image: "https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=1200&q=80", color: "from-emerald-900 to-teal-900" },
-  { id: "b3", title: "Campus Housing Board", subtitle: "Find PGs, shared flats and hostels near campus. Verified listings only.", cta: "Find Housing", image: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&q=80", color: "from-violet-900 to-purple-900" },
-];
+ * below) instead of hardcoded seed data. Ad banners are also DB-backed —
+ * see BannerCarousel — and are managed by moderators. */
 
 /* ─── Live API types & helpers ───────────────────────────── */
 interface ListingRow {
@@ -224,166 +212,6 @@ const CAT_IMAGES: Record<string, string> = {
   SPORTS:      "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=600&q=80",
   OTHER:       "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&q=80",
 };
-
-/* ─── Banner Slider ──────────────────────────────────────── */
-function BannerSlider({ banners, isAdmin, onAddBanner, onDeleteBanner }: {
-  banners: Banner[];
-  isAdmin: boolean;
-  onAddBanner: (b: Banner) => void;
-  onDeleteBanner: (id: string) => void;
-}) {
-  const [current, setCurrent] = useState(0);
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ title: "", subtitle: "", cta: "Learn More", image: "", color: "from-blue-900 to-indigo-900" });
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const COLOR_OPTIONS = [
-    { label: "Blue", value: "from-blue-900 to-indigo-900" },
-    { label: "Green", value: "from-emerald-900 to-teal-900" },
-    { label: "Purple", value: "from-violet-900 to-purple-900" },
-    { label: "Red", value: "from-red-900 to-rose-900" },
-    { label: "Orange", value: "from-orange-900 to-amber-900" },
-  ];
-
-  useEffect(() => {
-    if (banners.length <= 1) return;
-    timerRef.current = setInterval(() => setCurrent(c => (c + 1) % banners.length), 5000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [banners.length]);
-
-  const go = (dir: 1 | -1) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    setCurrent(c => (c + dir + banners.length) % banners.length);
-  };
-
-  if (banners.length === 0) return isAdmin ? (
-    <div className="rounded-2xl border-2 border-dashed border-slate-300 p-10 text-center mb-8">
-      <p className="text-slate-400 mb-3">No banners yet</p>
-      <Button onClick={() => setAddOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white">
-        <Plus className="mr-2 h-4 w-4" /> Add First Banner
-      </Button>
-      {addOpen && <BannerForm form={form} setForm={setForm} colors={COLOR_OPTIONS} onClose={() => setAddOpen(false)} onSave={(b) => { onAddBanner(b); setAddOpen(false); }} />}
-    </div>
-  ) : null;
-
-  const b = banners[current];
-
-  return (
-    <div className="relative mb-8 rounded-2xl overflow-hidden shadow-lg">
-      <AnimatePresence mode="wait">
-        <motion.div key={b.id}
-          initial={{ opacity: 0, x: 60 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -60 }}
-          transition={{ duration: 0.35 }}
-          className={cn("relative bg-gradient-to-r h-56 md:h-64 flex items-center", b.color)}>
-          {b.image && (
-            <img src={b.image} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none" />
-          )}
-          <div className="relative z-10 px-10 max-w-2xl">
-            <h2 className="text-3xl font-extrabold text-white mb-2">{b.title}</h2>
-            <p className="text-slate-300 text-sm mb-5">{b.subtitle}</p>
-            <Button className="bg-white text-slate-900 hover:bg-slate-100 font-bold">{b.cta}</Button>
-          </div>
-          {isAdmin && (
-            <button onClick={() => onDeleteBanner(b.id)}
-              className="absolute top-3 right-12 z-20 bg-black/40 hover:bg-red-600 text-white rounded-full p-1.5 transition-colors">
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </motion.div>
-      </AnimatePresence>
-
-      {banners.length > 1 && (
-        <>
-          <button onClick={() => go(-1)} className="absolute left-3 top-1/2 -translate-y-1/2 z-20 bg-black/40 hover:bg-black/70 text-white rounded-full p-2 transition-colors"><ChevronLeft className="h-5 w-5" /></button>
-          <button onClick={() => go(1)}  className="absolute right-3 top-1/2 -translate-y-1/2 z-20 bg-black/40 hover:bg-black/70 text-white rounded-full p-2 transition-colors"><ChevronRight className="h-5 w-5" /></button>
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
-            {banners.map((_, i) => (
-              <button key={i} onClick={() => setCurrent(i)}
-                className={cn("rounded-full transition-all", i === current ? "w-5 h-2 bg-white" : "w-2 h-2 bg-white/40 hover:bg-white/70")} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {isAdmin && (
-        <div className="absolute top-3 right-3 z-20 flex gap-2">
-          <Button size="sm" className="bg-white/90 text-slate-900 hover:bg-white font-bold text-xs h-8" onClick={() => setAddOpen(true)}>
-            <Plus className="h-3 w-3 mr-1" /> Add Banner
-          </Button>
-        </div>
-      )}
-
-      <AnimatePresence>
-        {addOpen && (
-          <BannerForm form={form} setForm={setForm} colors={COLOR_OPTIONS}
-            onClose={() => setAddOpen(false)}
-            onSave={(b) => { onAddBanner(b); setAddOpen(false); setForm({ title: "", subtitle: "", cta: "Learn More", image: "", color: "from-blue-900 to-indigo-900" }); }} />
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function BannerForm({ form, setForm, colors, onClose, onSave }: {
-  form: { title: string; subtitle: string; cta: string; image: string; color: string };
-  setForm: (fn: (f: typeof form) => typeof form) => void;
-  colors: { label: string; value: string }[];
-  onClose: () => void;
-  onSave: (b: Banner) => void;
-}) {
-  const s = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
-  const valid = form.title.trim().length > 0;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-        className="relative w-full max-w-lg mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-7 py-5 border-b">
-          <h2 className="text-lg font-extrabold text-slate-900">Add Promo Banner</h2>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100"><X className="h-5 w-5 text-slate-400" /></button>
-        </div>
-        <div className="px-7 py-5 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Banner Title *</label>
-            <Input placeholder="e.g. End-of-Sem Sale 🎉" value={form.title} onChange={e => s("title", e.target.value)} className="h-10" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Subtitle</label>
-            <Input placeholder="Short description shown on banner" value={form.subtitle} onChange={e => s("subtitle", e.target.value)} className="h-10" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">CTA Button Text</label>
-              <Input placeholder="e.g. Browse Deals" value={form.cta} onChange={e => s("cta", e.target.value)} className="h-10" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Theme Color</label>
-              <select value={form.color} onChange={e => s("color", e.target.value)}
-                className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm">
-                {colors.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Background Image URL (optional)</label>
-            <div className="relative">
-              <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input className="h-10 pl-9" placeholder="https://..." value={form.image} onChange={e => s("image", e.target.value)} />
-            </div>
-          </div>
-        </div>
-        <div className="px-7 py-5 border-t flex gap-3">
-          <Button variant="outline" className="px-5 h-10" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 h-10 bg-blue-600 hover:bg-blue-700 font-bold" disabled={!valid}
-            onClick={() => onSave({ id: `b_${Date.now()}`, title: form.title, subtitle: form.subtitle, cta: form.cta || "Learn More", image: form.image, color: form.color })}>
-            <Save className="h-4 w-4 mr-2" /> Save Banner
-          </Button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
 /* ─── Sell Listing Modal ─────────────────────────────────── */
 function SellListingModal({ onClose, onAdd }: { onClose: () => void; onAdd: (p: Product) => void }) {
@@ -750,10 +578,20 @@ function ProductCard({ product, isMod, onDelete, onReport }: {
 }
 
 /* ─── Page ───────────────────────────────────────────────── */
+/** Maps a banner's linkType to the Marketplace tab it should open. */
+const LINK_TYPE_TO_TAB: Record<string, string> = {
+  restaurant: "restaurants",
+  pg: "housing",
+  local_service: "services",
+};
+
 export default function Marketplace() {
   const { user } = useAuth();
   const isMod   = user?.role === "low_admin" || user?.role === "admin";
   const isAdmin = user?.role === "admin";
+
+  const search_ = useSearch();
+  const initialTab = new URLSearchParams(search_).get("tab");
 
   const queryClient = useQueryClient();
   const { data: listings = [] } = useQuery({ queryKey: ["listings"], queryFn: fetchListings });
@@ -764,10 +602,9 @@ export default function Marketplace() {
   const roommatePosts = listings.filter(l => l.listingType === "roommate").map(listingToRoommate);
   const restaurants = restaurantRows.map(localListingToRestaurant);
 
-  const [banners,  setBanners]    = useState<Banner[]>(DEFAULT_BANNERS);
   const [showForm, setShowForm]   = useState(false);
   const [showRoommateForm, setShowRoommateForm] = useState(false);
-  const [activeTab, setActiveTab] = useState("buy-sell");
+  const [activeTab, setActiveTab] = useState(initialTab || "buy-sell");
   const [search,   setSearch]     = useState("");
   const [filterCat, setFilterCat] = useState("ALL");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "warn" } | null>(null);
@@ -823,12 +660,13 @@ export default function Marketplace() {
       </header>
 
       <div className="p-8">
-        {/* Banner slider */}
-        <BannerSlider
-          banners={banners}
-          isAdmin={isAdmin}
-          onAddBanner={(b) => { setBanners(prev => [...prev, b]); notify("Banner added!"); }}
-          onDeleteBanner={(id) => { setBanners(prev => prev.filter(b => b.id !== id)); notify("Banner removed."); }}
+        {/* Ad banner carousel — moderator-managed, see Moderator → Ad Banners */}
+        <BannerCarousel
+          placement="marketplace"
+          onBannerClick={(linkType) => {
+            const tab = LINK_TYPE_TO_TAB[linkType];
+            if (tab) setActiveTab(tab);
+          }}
         />
 
         {/* Sell listing modal */}

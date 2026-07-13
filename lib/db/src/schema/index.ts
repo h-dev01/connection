@@ -6,3 +6,4 @@ export * from "./marketplace";
 export * from "./clubs";
 export * from "./admin";
 export * from "./local-listings";
+export * from "./banners";

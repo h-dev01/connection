@@ -9,7 +9,7 @@ import {
   FileText, Flag, CheckCircle, XCircle, Clock, Trash2,
   Plus, X, Eye, Upload, Pencil, AlertTriangle, ChevronDown,
   ChevronRight, Check, Search, RefreshCw, Filter, MapPin,
-  Store,
+  Store, Image as ImageIcon, Timer, Link2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1023,6 +1023,294 @@ function fromDatetimeLocal(v: string): string {
   return new Date(v).toISOString();
 }
 
+/* ══════════════════════════════════════════════════════════════
+   BANNERS TAB — rotating ad banners for Study Hub & Marketplace
+══════════════════════════════════════════════════════════════ */
+const PLACEMENT_OPTIONS = [
+  { value: "both",        label: "Study Hub + Marketplace" },
+  { value: "study",       label: "Study Hub only" },
+  { value: "marketplace", label: "Marketplace only" },
+] as const;
+
+const LINK_TYPE_OPTIONS = [
+  { value: "none",          label: "No link" },
+  { value: "restaurant",    label: "Connect to Restaurants" },
+  { value: "pg",            label: "Connect to PG / Housing" },
+  { value: "local_service", label: "Connect to Local Services" },
+] as const;
+
+function blankBannerForm() {
+  return {
+    title: "", subtitle: "", imageUrl: "",
+    placement: "both" as "both" | "study" | "marketplace",
+    linkType: "none" as "none" | "restaurant" | "pg" | "local_service",
+    durationSec: 5,
+    status: "active" as "active" | "inactive",
+    collegeId: undefined as number | undefined, collegeName: "",
+  };
+}
+
+function BannersTab({ userName, userId }: { userName: string; userId?: number }) {
+  const [banners, setBanners] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [dialog, setDialog] = useState<{ mode: "add" | "edit"; banner?: any } | null>(null);
+  const [form, setForm] = useState(blankBannerForm());
+  const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const r = await fetch("/api/moderator/banners");
+    if (r.ok) setBanners(await r.json());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setF = (patch: Partial<ReturnType<typeof blankBannerForm>>) => setForm(prev => ({ ...prev, ...patch }));
+
+  const openAdd = () => { setForm(blankBannerForm()); setDialog({ mode: "add" }); };
+  const openEdit = (banner: any) => {
+    setForm({
+      title: banner.title, subtitle: banner.subtitle ?? "", imageUrl: banner.imageUrl,
+      placement: banner.placement, linkType: banner.linkType,
+      durationSec: Math.round((banner.durationMs ?? 5000) / 1000),
+      status: banner.status, collegeId: banner.collegeId ?? undefined, collegeName: banner.collegeName ?? "",
+    });
+    setDialog({ mode: "edit", banner });
+  };
+
+  const handleSave = async () => {
+    if (!form.title.trim() || !form.imageUrl) return;
+    setSaving(true);
+    const payload = {
+      title: form.title, subtitle: form.subtitle, imageUrl: form.imageUrl,
+      placement: form.placement, linkType: form.linkType,
+      durationMs: Math.min(15000, Math.max(2000, Number(form.durationSec) * 1000 || 5000)),
+      status: form.status, collegeId: form.collegeId, collegeName: form.collegeName,
+      addedByModerator: userName, addedByModeratorId: userId,
+    };
+    const isAdd = dialog?.mode === "add";
+    const url = isAdd ? "/api/moderator/banners" : `/api/moderator/banners/${dialog?.banner?.id}`;
+    const method = isAdd ? "POST" : "PATCH";
+    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    setSaving(false);
+    if (r.ok) {
+      setDialog(null);
+      showToast(isAdd ? "Banner added." : "Banner updated.");
+      load();
+    } else {
+      const err = await r.json().catch(() => ({}));
+      showToast((err as any).error || "Failed to save.", "error");
+    }
+  };
+
+  const handleToggleStatus = async (banner: any) => {
+    const r = await fetch(`/api/moderator/banners/${banner.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: banner.status === "active" ? "inactive" : "active", addedByModerator: userName }),
+    });
+    if (r.ok) { load(); } else showToast("Failed to update.", "error");
+  };
+
+  const handleDelete = async (id: number) => {
+    const r = await fetch(`/api/moderator/banners/${id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deletedBy: userName }),
+    });
+    if (r.ok) { showToast("Banner deleted."); load(); }
+    else showToast("Failed to delete.", "error");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Ad Banners</h2>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Rotating banners shown on Study Hub and Marketplace. Recommended image size: 1200×400px (all banners display at a fixed size regardless of the upload).
+          </p>
+        </div>
+        <Button onClick={openAdd} size="sm" className="gap-1.5">
+          <Plus className="h-4 w-4" /> Add Banner
+        </Button>
+      </div>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className={cn("text-white text-sm font-semibold px-4 py-3 rounded-xl flex items-center gap-2 shadow-lg",
+              toast.type === "error" ? "bg-red-600" : "bg-emerald-600")}>
+            {toast.type === "error" ? <XCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+            {toast.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {loading ? (
+        <div className="py-12 text-center text-slate-400">Loading banners…</div>
+      ) : banners.length === 0 ? (
+        <div className="py-16 text-center text-slate-400">
+          <ImageIcon className="h-8 w-8 mx-auto mb-3 text-slate-300" />
+          <p className="font-semibold">No banners yet.</p>
+          <p className="text-sm mt-1">Add one to promote restaurants, PGs or local services.</p>
+        </div>
+      ) : (
+        <div className="grid gap-3">
+          {banners.map((b) => (
+            <div key={b.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex gap-4">
+              <img src={b.imageUrl} alt={b.title} className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-slate-100" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-900">{b.title}</span>
+                  <Badge className={cn("text-xs border capitalize", b.status === "active" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200")}>
+                    {b.status}
+                  </Badge>
+                </div>
+                {b.subtitle && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{b.subtitle}</p>}
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-slate-400">
+                  <span>📍 {PLACEMENT_OPTIONS.find(p => p.value === b.placement)?.label ?? b.placement}</span>
+                  <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" />{LINK_TYPE_OPTIONS.find(l => l.value === b.linkType)?.label ?? b.linkType}</span>
+                  <span className="inline-flex items-center gap-1"><Timer className="h-3 w-3" />{Math.round((b.durationMs ?? 5000) / 1000)}s</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-1.5 text-[10px] text-slate-400">
+                  <span>By {b.addedByModerator}</span>
+                  <span>· {new Date(b.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 flex-shrink-0">
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500 hover:bg-slate-50" onClick={() => handleToggleStatus(b)}>
+                  {b.status === "active" ? <ToggleRight className="h-3.5 w-3.5 mr-1 text-emerald-600" /> : <ToggleLeft className="h-3.5 w-3.5 mr-1" />}
+                  {b.status === "active" ? "Active" : "Inactive"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500 hover:bg-slate-50" onClick={() => openEdit(b)}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" />Edit
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs text-red-500 hover:bg-red-50" onClick={() => handleDelete(b.id)}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={!!dialog} onOpenChange={open => !open && setDialog(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{dialog?.mode === "add" ? "Add Banner" : "Edit Banner"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Banner Image *</label>
+              <p className="text-xs text-slate-400 mb-2">Recommended size 1200×400px — it will always display at a fixed size on the page.</p>
+              {form.imageUrl ? (
+                <div className="relative group rounded-lg overflow-hidden border border-slate-200 bg-slate-100 aspect-[3/1]">
+                  <img src={form.imageUrl} alt="" className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => setF({ imageUrl: "" })}
+                    className="absolute top-1.5 right-1.5 h-6 w-6 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <label className={cn(
+                  "flex flex-col items-center justify-center gap-1 aspect-[3/1] rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors",
+                  uploadingImage && "opacity-50 pointer-events-none",
+                )}>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" className="hidden"
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setUploadingImage(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("image", file);
+                        const r = await fetch("/api/moderator/upload", { method: "POST", body: fd });
+                        if (r.ok) {
+                          const { url } = await r.json();
+                          setF({ imageUrl: url });
+                        } else {
+                          const err = await r.json().catch(() => ({}));
+                          showToast((err as any).error || "Upload failed.", "error");
+                        }
+                      } catch {
+                        showToast("Upload failed.", "error");
+                      } finally {
+                        setUploadingImage(false);
+                      }
+                    }} />
+                  {uploadingImage ? <RefreshCw className="h-5 w-5 text-slate-400 animate-spin" /> : (
+                    <>
+                      <Upload className="h-5 w-5 text-slate-400" />
+                      <span className="text-[10px] font-semibold text-slate-400">Upload Image</span>
+                    </>
+                  )}
+                </label>
+              )}
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Title *</label>
+              <Input value={form.title} onChange={e => setF({ title: e.target.value })} placeholder="e.g. 20% off at Spice Garden" />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Subtitle</label>
+              <Input value={form.subtitle} onChange={e => setF({ subtitle: e.target.value })} placeholder="Short supporting line" />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Show on</label>
+              <select value={form.placement} onChange={e => setF({ placement: e.target.value as typeof form.placement })}
+                className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {PLACEMENT_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">On click</label>
+              <select value={form.linkType} onChange={e => setF({ linkType: e.target.value as typeof form.linkType })}
+                className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {LINK_TYPE_OPTIONS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Opens the matching Marketplace tab (Restaurants / Housing / Local Services).</p>
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Rotation duration (seconds)</label>
+              <Input type="number" min={2} max={15} value={form.durationSec}
+                onChange={e => setF({ durationSec: Number(e.target.value) || 5 })} />
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Status</label>
+              <select value={form.status} onChange={e => setF({ status: e.target.value as typeof form.status })}
+                className="w-full h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
+              <Button disabled={!form.title.trim() || !form.imageUrl || saving} onClick={handleSave}>
+                {saving ? "Saving…" : dialog?.mode === "add" ? "Add Banner" : "Save Changes"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function ListingsTab({ userName, userId }: { userName: string; userId?: number }) {
   const [colleges, setColleges]         = useState<{ id: number; name: string }[]>([]);
   const [filterCollegeId, setFilterCollegeId] = useState("");
@@ -1694,7 +1982,7 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
 /* ══════════════════════════════════════════════════════════════
    MAIN MODERATOR PAGE
 ══════════════════════════════════════════════════════════════ */
-type Tab = "toggles" | "materials" | "schedules" | "timetables" | "reports" | "listings";
+type Tab = "toggles" | "materials" | "schedules" | "timetables" | "reports" | "listings" | "banners";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "toggles",   label: "Feature Toggles", icon: ToggleRight },
@@ -1702,6 +1990,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "schedules", label: "Exam Schedules",   icon: Calendar },
   { id: "timetables",label: "Timetables",       icon: BookOpen },
   { id: "listings",  label: "Listings",         icon: Store },
+  { id: "banners",   label: "Ad Banners",       icon: ImageIcon },
   { id: "reports",   label: "Reports",          icon: Flag },
 ];
 
@@ -1746,6 +2035,7 @@ export default function Moderator() {
             {activeTab === "schedules"  && <ExamSchedulesTab userName={userName} />}
             {activeTab === "timetables" && <TimetablesTab userName={userName} />}
             {activeTab === "listings"   && <ListingsTab userName={userName} userId={userId} />}
+            {activeTab === "banners"    && <BannersTab userName={userName} userId={userId} />}
             {activeTab === "reports"    && <ReportsTab />}
           </motion.div>
         </AnimatePresence>

@@ -11,6 +11,7 @@ import adminRouter from "./admin";
 import academicRouter from "./academic";
 import moderatorRouter from "./moderator";
 import uploadRouter from "./upload";
+import bannersRouter from "./banners";
 
 const router: IRouter = Router();
 
@@ -20,6 +21,7 @@ router.use(adminRouter);
 router.use(academicRouter);
 router.use(moderatorRouter);
 router.use(uploadRouter);
+router.use(bannersRouter);
 router.use(usersRouter);
 router.use(communityRouter);
 router.use(studyRouter);

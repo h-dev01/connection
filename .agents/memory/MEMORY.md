@@ -5,3 +5,4 @@
 - [College email-domain-gated signup](college-email-domain-signup.md) — colleges have unique emailDomain; signup uses collegeId/courseId/semesterId, validated server-side against domain + hierarchy.
 - [Moderator photo upload storage](moderator-image-upload.md) — listing photos saved to local disk via multer (no object-storage integration set up); not persistent across redeploys.
 - [Marketplace restaurants & roommate finder](marketplace-extensions.md) — restaurants are moderator-approved local_listings (read-only); roommate ads reuse the listings table with listingType "roommate".
+- [Ad banner carousel](ad-banners.md) — shared BannerCarousel component, moderator-managed `banners` table, fixed display size not upload validation, linkType→Marketplace tab map for click-through.
