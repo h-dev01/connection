@@ -14,6 +14,7 @@ import {
   auditLogTable,
   localListingsTable,
 } from "@workspace/db";
+import { gte, lte, type SQL } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -25,14 +26,39 @@ async function writeAudit(entry: {
   await db.insert(auditLogTable).values(entry);
 }
 
+/**
+ * Shared "Moderator Filters" bar helpers — Time range (today / last 7 days /
+ * last 30 days / custom range) plus College → Course → Semester → Subject
+ * scoping, used across Feature Toggles, Study Materials, Exam Schedules and
+ * Timetables tabs.
+ */
+const toInt = (v: string | undefined) => {
+  const n = parseInt(v ?? "", 10);
+  return isNaN(n) ? undefined : n;
+};
+
+/** Parses `dateFrom`/`dateTo` query params (ISO strings) into a date-range condition on `column`. */
+function dateRangeCondition(column: Parameters<typeof gte>[0], dateFrom?: string, dateTo?: string): SQL | undefined {
+  const conditions: SQL[] = [];
+  if (dateFrom) {
+    const d = new Date(dateFrom);
+    if (!isNaN(d.getTime())) conditions.push(gte(column, d));
+  }
+  if (dateTo) {
+    const d = new Date(dateTo);
+    if (!isNaN(d.getTime())) conditions.push(lte(column, d));
+  }
+  if (conditions.length === 0) return undefined;
+  return conditions.length === 1 ? conditions[0] : and(...conditions);
+}
+
 /* ══════════════════════════════════════════════════════════════
    STUDY MATERIALS — approval queue
 ══════════════════════════════════════════════════════════════ */
 
-// GET /api/moderator/materials?status=&collegeId=&courseId=&semesterId=&subjectId=&search=
+// GET /api/moderator/materials?status=&collegeId=&courseId=&semesterId=&subjectId=&search=&dateFrom=&dateTo=
 router.get("/moderator/materials", async (req, res): Promise<void> => {
-  const { status, course, semester, search } = req.query as Record<string, string>;
-  const toInt = (v: string | undefined) => { const n = parseInt(v ?? "", 10); return isNaN(n) ? undefined : n; };
+  const { status, course, semester, search, dateFrom, dateTo } = req.query as Record<string, string>;
   const collegeId  = toInt(req.query.collegeId  as string);
   const courseId   = toInt(req.query.courseId   as string);
   const semesterId = toInt(req.query.semesterId as string);
@@ -50,6 +76,8 @@ router.get("/moderator/materials", async (req, res): Promise<void> => {
   // Legacy text filters (backwards compat)
   if (!collegeId && !courseId && course) conditions.push(eq(studyMaterialsTable.course, course));
   if (!semesterId && semester) conditions.push(eq(studyMaterialsTable.semester, semester));
+  const dateCond = dateRangeCondition(studyMaterialsTable.createdAt, dateFrom, dateTo);
+  if (dateCond) conditions.push(dateCond);
 
   if (conditions.length > 0) query = query.where(and(...conditions));
 
@@ -163,16 +191,29 @@ router.delete("/moderator/materials/:id", async (req, res): Promise<void> => {
    FEATURE TOGGLES
 ══════════════════════════════════════════════════════════════ */
 
-// GET /api/moderator/toggles?course=...&semester=...
+// GET /api/moderator/toggles?course=...&semester=...&collegeId=&courseId=&semesterId=&subjectId=&dateFrom=&dateTo=
 // Returns merged registry + per-scope toggle state
 router.get("/moderator/toggles", async (req, res): Promise<void> => {
-  const { course = "", semester = "" } = req.query as Record<string, string>;
+  const { course = "", semester = "", dateFrom, dateTo } = req.query as Record<string, string>;
+  const collegeId  = toInt(req.query.collegeId  as string);
+  const courseId   = toInt(req.query.courseId   as string);
+  const semesterId = toInt(req.query.semesterId as string);
+  const subjectId  = toInt(req.query.subjectId  as string);
 
   const registry = await db.select().from(featureRegistryTable).where(eq(featureRegistryTable.retired, false));
-  const existingToggles = await db
-    .select()
-    .from(featureTogglesTable)
-    .where(and(eq(featureTogglesTable.course, course), eq(featureTogglesTable.semester, semester)));
+
+  const scopeConditions = [];
+  if (courseId && semesterId) {
+    scopeConditions.push(and(eq(featureTogglesTable.courseId, courseId), eq(featureTogglesTable.semesterId, semesterId)));
+  } else {
+    scopeConditions.push(and(eq(featureTogglesTable.course, course), eq(featureTogglesTable.semester, semester)));
+  }
+  if (collegeId) scopeConditions.push(eq(featureTogglesTable.collegeId, collegeId));
+  if (subjectId) scopeConditions.push(eq(featureTogglesTable.subjectId, subjectId));
+  const dateCond = dateRangeCondition(featureTogglesTable.updatedAt, dateFrom, dateTo);
+  if (dateCond) scopeConditions.push(dateCond);
+
+  const existingToggles = await db.select().from(featureTogglesTable).where(and(...scopeConditions));
 
   const toggleMap = new Map(existingToggles.map((t) => [t.featureName, t]));
 
@@ -196,6 +237,10 @@ router.get("/moderator/toggles", async (req, res): Promise<void> => {
 const ToggleSchema = z.object({
   course: z.string().min(1),
   semester: z.string().min(1),
+  collegeId: z.number().optional(),
+  courseId: z.number().optional(),
+  semesterId: z.number().optional(),
+  subjectId: z.number().optional(),
   enabled: z.boolean(),
   updatedByName: z.string().default("Moderator"),
   updatedById: z.number().optional(),
@@ -205,7 +250,7 @@ router.patch("/moderator/toggles/:featureName", async (req, res): Promise<void> 
   const featureName = req.params.featureName as string;
   const parsed = ToggleSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
-  const { course, semester, enabled, updatedByName, updatedById } = parsed.data;
+  const { course, semester, collegeId, courseId, semesterId, subjectId, enabled, updatedByName, updatedById } = parsed.data;
 
   // Check if not forced active
   const [feature] = await db.select().from(featureRegistryTable).where(eq(featureRegistryTable.name, featureName));
@@ -228,13 +273,13 @@ router.patch("/moderator/toggles/:featureName", async (req, res): Promise<void> 
   if (existing.length > 0) {
     [row] = await db
       .update(featureTogglesTable)
-      .set({ enabled, updatedByName, updatedById, updatedAt: new Date() })
+      .set({ enabled, updatedByName, updatedById, collegeId, courseId, semesterId, subjectId, updatedAt: new Date() })
       .where(eq(featureTogglesTable.id, existing[0].id))
       .returning();
   } else {
     [row] = await db
       .insert(featureTogglesTable)
-      .values({ featureName, course, semester, enabled, updatedByName, updatedById })
+      .values({ featureName, course, semester, collegeId, courseId, semesterId, subjectId, enabled, updatedByName, updatedById })
       .returning();
   }
 
@@ -252,12 +297,23 @@ router.patch("/moderator/toggles/:featureName", async (req, res): Promise<void> 
    EXAM SCHEDULES
 ══════════════════════════════════════════════════════════════ */
 
-// GET /api/moderator/exam-schedules?course=...&semester=...
+// GET /api/moderator/exam-schedules?course=...&semester=...&collegeId=&courseId=&semesterId=&subjectId=&dateFrom=&dateTo=
 router.get("/moderator/exam-schedules", async (req, res): Promise<void> => {
-  const { course, semester } = req.query as Record<string, string>;
+  const { course, semester, dateFrom, dateTo } = req.query as Record<string, string>;
+  const collegeId  = toInt(req.query.collegeId  as string);
+  const courseId   = toInt(req.query.courseId   as string);
+  const semesterId = toInt(req.query.semesterId as string);
+  const subjectId  = toInt(req.query.subjectId  as string);
+
   const conditions = [];
-  if (course) conditions.push(eq(examSchedulesTable.course, course));
-  if (semester) conditions.push(eq(examSchedulesTable.semester, semester));
+  if (collegeId)  conditions.push(eq(examSchedulesTable.collegeId,  collegeId));
+  if (courseId)   conditions.push(eq(examSchedulesTable.courseId,   courseId));
+  if (semesterId) conditions.push(eq(examSchedulesTable.semesterId, semesterId));
+  if (subjectId)  conditions.push(eq(examSchedulesTable.subjectId,  subjectId));
+  if (!collegeId && !courseId && course) conditions.push(eq(examSchedulesTable.course, course));
+  if (!semesterId && semester) conditions.push(eq(examSchedulesTable.semester, semester));
+  const dateCond = dateRangeCondition(examSchedulesTable.createdAt, dateFrom, dateTo);
+  if (dateCond) conditions.push(dateCond);
 
   let query = db.select().from(examSchedulesTable).$dynamic();
   if (conditions.length > 0) query = query.where(and(...conditions));
@@ -269,6 +325,10 @@ const ExamScheduleSchema = z.object({
   title: z.string().min(1),
   course: z.string().min(1),
   semester: z.string().min(1),
+  collegeId: z.number().optional(),
+  courseId: z.number().optional(),
+  semesterId: z.number().optional(),
+  subjectId: z.number().optional(),
   examSession: z.string().min(1),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
@@ -310,13 +370,24 @@ router.delete("/moderator/exam-schedules/:id", async (req, res): Promise<void> =
    CLASS TIMETABLES
 ══════════════════════════════════════════════════════════════ */
 
-// GET /api/moderator/timetables?course=...&semester=...&section=...
+// GET /api/moderator/timetables?course=...&semester=...&section=...&collegeId=&courseId=&semesterId=&subjectId=&dateFrom=&dateTo=
 router.get("/moderator/timetables", async (req, res): Promise<void> => {
-  const { course, semester, section } = req.query as Record<string, string>;
+  const { course, semester, section, dateFrom, dateTo } = req.query as Record<string, string>;
+  const collegeId  = toInt(req.query.collegeId  as string);
+  const courseId   = toInt(req.query.courseId   as string);
+  const semesterId = toInt(req.query.semesterId as string);
+  const subjectId  = toInt(req.query.subjectId  as string);
+
   const conditions = [];
-  if (course) conditions.push(eq(classTimetablesTable.course, course));
-  if (semester) conditions.push(eq(classTimetablesTable.semester, semester));
+  if (collegeId)  conditions.push(eq(classTimetablesTable.collegeId,  collegeId));
+  if (courseId)   conditions.push(eq(classTimetablesTable.courseId,   courseId));
+  if (semesterId) conditions.push(eq(classTimetablesTable.semesterId, semesterId));
+  if (subjectId)  conditions.push(eq(classTimetablesTable.subjectId,  subjectId));
+  if (!collegeId && !courseId && course) conditions.push(eq(classTimetablesTable.course, course));
+  if (!semesterId && semester) conditions.push(eq(classTimetablesTable.semester, semester));
   if (section) conditions.push(eq(classTimetablesTable.section, section));
+  const dateCond = dateRangeCondition(classTimetablesTable.createdAt, dateFrom, dateTo);
+  if (dateCond) conditions.push(dateCond);
 
   let query = db.select().from(classTimetablesTable).$dynamic();
   if (conditions.length > 0) query = query.where(and(...conditions));
@@ -329,6 +400,10 @@ const TimetableSchema = z.object({
   course: z.string().min(1),
   semester: z.string().min(1),
   section: z.string().min(1),
+  collegeId: z.number().optional(),
+  courseId: z.number().optional(),
+  semesterId: z.number().optional(),
+  subjectId: z.number().optional(),
   effectiveFrom: z.string().optional(),
   effectiveTo: z.string().optional(),
   fileUrl: z.string().optional(),
@@ -373,7 +448,9 @@ router.delete("/moderator/timetables/:id", async (req, res): Promise<void> => {
 router.get("/moderator/local-listings", async (req, res): Promise<void> => {
   const toInt = (v: string | undefined) => { const n = parseInt(v ?? "", 10); return isNaN(n) ? undefined : n; };
   const collegeId = toInt(req.query.collegeId as string);
-  const { category, status, search, roomType, gender, cuisineType, deliveryAvailable, serviceType } = req.query as Record<string, string>;
+  const { category, status, search, roomType, gender, cuisineTypes, deliveryAvailable, serviceType } = req.query as Record<string, string>;
+  // Comma-separated list of selected cuisines — a listing matches if it has ANY of them.
+  const cuisineList = cuisineTypes ? cuisineTypes.split(",").map(s => s.trim()).filter(Boolean) : [];
 
   let query = db.select().from(localListingsTable).$dynamic();
   const conditions: ReturnType<typeof isNull | typeof eq>[] = [isNull(localListingsTable.deletedAt)];
@@ -399,13 +476,19 @@ router.get("/moderator/local-listings", async (req, res): Promise<void> => {
   }
 
   // Metadata filters (parsed from JSON)
-  if (roomType || gender || cuisineType || deliveryAvailable !== undefined && deliveryAvailable !== "" || serviceType) {
+  if (roomType || gender || cuisineList.length > 0 || deliveryAvailable !== undefined && deliveryAvailable !== "" || serviceType) {
     rows = rows.filter(r => {
       let meta: Record<string, unknown> = {};
       try { meta = JSON.parse(r.metadata); } catch { /* skip */ }
       if (roomType && meta.roomType !== roomType) return false;
       if (gender && meta.gender !== gender) return false;
-      if (cuisineType && meta.cuisineType !== cuisineType) return false;
+      if (cuisineList.length > 0) {
+        // Support both the new multi-select `cuisineTypes` array and the legacy single `cuisineType` string.
+        const listingCuisines: string[] = Array.isArray(meta.cuisineTypes)
+          ? meta.cuisineTypes as string[]
+          : (meta.cuisineType ? [meta.cuisineType as string] : []);
+        if (!listingCuisines.some(c => cuisineList.includes(c))) return false;
+      }
       if (deliveryAvailable === "true" && meta.deliveryAvailable !== true) return false;
       if (deliveryAvailable === "false" && meta.deliveryAvailable !== false) return false;
       if (serviceType && meta.serviceType !== serviceType) return false;

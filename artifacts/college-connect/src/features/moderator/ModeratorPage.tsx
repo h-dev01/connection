@@ -34,22 +34,133 @@ const REJECTION_REASONS = [
   "Other",
 ];
 
-/* ─── Shared scope picker ───────────────────────────────────── */
-function ScopePicker({ course, semester, onCourse, onSemester }: {
-  course: string; semester: string; onCourse: (v: string) => void; onSemester: (v: string) => void;
+/* ─── Shared Moderator Filters bar ──────────────────────────────
+   Time range (Today / Last 7 Days / Last 30 Days / Custom Range) +
+   College → Course → Semester → Subject cascading dropdowns, plus an
+   optional Section dropdown. Used across Feature Toggles, Study
+   Materials, Exam Schedules and Timetables tabs.
+   A Semester dropdown sits between Course and Subject — subjects belong
+   to a specific course semester in the academic hierarchy, so it's kept
+   as a required step to reach Subject, even though it isn't a distinct
+   item in the original filter list.
+─────────────────────────────────────────────────────────────── */
+export type ModScope = {
+  collegeId?: number;
+  courseId?: number;
+  semesterId?: number;
+  subjectId?: number;
+  section?: string;
+  dateFrom?: string; // ISO
+  dateTo?: string;   // ISO
+  // Derived legacy text labels — kept for endpoints that still key on free text.
+  courseCode?: string;
+  semesterLabel?: string;
+};
+
+function ModeratorFilterBar({ scope, onChange, showSection = false, showSubject = true }: {
+  scope: ModScope; onChange: (patch: Partial<ModScope>) => void; showSection?: boolean; showSubject?: boolean;
 }) {
+  const [colleges, setColleges]   = useState<{ id: number; name: string }[]>([]);
+  const [courses, setCourses]     = useState<{ id: number; name: string; code: string }[]>([]);
+  const [semesters, setSemesters] = useState<{ id: number; number: number; name: string }[]>([]);
+  const [subjects, setSubjects]   = useState<{ id: number; name: string; code: string }[]>([]);
+  const [timePreset, setTimePreset] = useState<"" | "today" | "last7" | "last30" | "custom">("");
+
+  useEffect(() => { fetch("/api/colleges").then(r => r.ok ? r.json() : []).then(setColleges).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!scope.collegeId) { setCourses([]); return; }
+    fetch(`/api/colleges/${scope.collegeId}/courses`).then(r => r.ok ? r.json() : []).then(setCourses).catch(() => {});
+  }, [scope.collegeId]);
+  useEffect(() => {
+    if (!scope.courseId) { setSemesters([]); return; }
+    fetch(`/api/courses/${scope.courseId}/semesters`).then(r => r.ok ? r.json() : []).then(setSemesters).catch(() => {});
+  }, [scope.courseId]);
+  useEffect(() => {
+    if (!scope.semesterId) { setSubjects([]); return; }
+    fetch(`/api/semesters/${scope.semesterId}/subjects`).then(r => r.ok ? r.json() : []).then(setSubjects).catch(() => {});
+  }, [scope.semesterId]);
+
+  const applyPreset = (preset: "today" | "last7" | "last30") => {
+    const now = new Date();
+    const from = new Date(now);
+    if (preset === "today") from.setHours(0, 0, 0, 0);
+    if (preset === "last7") from.setDate(from.getDate() - 7);
+    if (preset === "last30") from.setDate(from.getDate() - 30);
+    setTimePreset(preset);
+    onChange({ dateFrom: from.toISOString(), dateTo: now.toISOString() });
+  };
+
+  const selectCls = "h-9 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
-    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm">
-      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Scope</span>
-      <select className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        value={course} onChange={(e) => onCourse(e.target.value)}>
-        {COURSE_OPTIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+    <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm flex-wrap">
+      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Filters</span>
+
+      {/* Time */}
+      <select className={selectCls} value={timePreset} onChange={(e) => {
+        const v = e.target.value as typeof timePreset;
+        if (v === "today" || v === "last7" || v === "last30") applyPreset(v);
+        else if (v === "custom") setTimePreset("custom");
+        else { setTimePreset(""); onChange({ dateFrom: undefined, dateTo: undefined }); }
+      }}>
+        <option value="">All Time</option>
+        <option value="today">Today</option>
+        <option value="last7">Last 7 Days</option>
+        <option value="last30">Last 30 Days</option>
+        <option value="custom">Custom Range</option>
       </select>
-      <X className="h-3 w-3 text-slate-400" />
-      <select className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        value={semester} onChange={(e) => onSemester(e.target.value)}>
-        {SEM_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+      {timePreset === "custom" && (
+        <>
+          <input type="date" className={selectCls} value={scope.dateFrom ? scope.dateFrom.slice(0, 10) : ""}
+            onChange={(e) => onChange({ dateFrom: e.target.value ? new Date(`${e.target.value}T00:00:00`).toISOString() : undefined })} />
+          <span className="text-slate-400 text-xs">to</span>
+          <input type="date" className={selectCls} value={scope.dateTo ? scope.dateTo.slice(0, 10) : ""}
+            onChange={(e) => onChange({ dateTo: e.target.value ? new Date(`${e.target.value}T23:59:59`).toISOString() : undefined })} />
+        </>
+      )}
+
+      {/* College */}
+      <select className={selectCls} value={scope.collegeId ?? ""} onChange={(e) => {
+        const id = e.target.value ? Number(e.target.value) : undefined;
+        onChange({ collegeId: id, courseId: undefined, courseCode: undefined, semesterId: undefined, semesterLabel: undefined, subjectId: undefined });
+      }}>
+        <option value="">All Colleges</option>
+        {colleges.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
+
+      {/* Course */}
+      <select className={selectCls} value={scope.courseId ?? ""} disabled={!scope.collegeId} onChange={(e) => {
+        const id = e.target.value ? Number(e.target.value) : undefined;
+        const c = courses.find((c) => c.id === id);
+        onChange({ courseId: id, courseCode: c?.code, semesterId: undefined, semesterLabel: undefined, subjectId: undefined });
+      }}>
+        <option value="">All Courses</option>
+        {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+
+      {/* Semester — required intermediate step to reach Subject */}
+      <select className={selectCls} value={scope.semesterId ?? ""} disabled={!scope.courseId} onChange={(e) => {
+        const id = e.target.value ? Number(e.target.value) : undefined;
+        const s = semesters.find((s) => s.id === id);
+        onChange({ semesterId: id, semesterLabel: s?.name, subjectId: undefined });
+      }}>
+        <option value="">All Semesters</option>
+        {semesters.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+
+      {showSection && (
+        <select className={selectCls} value={scope.section ?? ""} onChange={(e) => onChange({ section: e.target.value || undefined })}>
+          <option value="">All Sections</option>
+          {SECTION_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      )}
+
+      {showSubject && (
+        <select className={selectCls} value={scope.subjectId ?? ""} disabled={!scope.semesterId} onChange={(e) => onChange({ subjectId: e.target.value ? Number(e.target.value) : undefined })}>
+          <option value="">All Subjects</option>
+          {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      )}
     </div>
   );
 }
@@ -58,30 +169,46 @@ function ScopePicker({ course, semester, onCourse, onSemester }: {
    FEATURE TOGGLES TAB
 ══════════════════════════════════════════════════════════════ */
 function FeatureTogglesTab({ userName, userId }: { userName: string; userId?: number }) {
-  const [course, setCourse] = useState("CS301");
-  const [semester, setSemester] = useState("sem5");
+  const [scope, setScope] = useState<ModScope>({});
+  const course = scope.courseCode ?? "CS301";
+  const semester = scope.semesterLabel ?? "sem5";
   const [toggles, setToggles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  const patchScope = (patch: Partial<ModScope>) => setScope((prev) => ({ ...prev, ...patch }));
+
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/moderator/toggles?course=${course}&semester=${semester}`);
+    const p = new URLSearchParams({ course, semester });
+    if (scope.collegeId)  p.set("collegeId",  String(scope.collegeId));
+    if (scope.courseId)   p.set("courseId",   String(scope.courseId));
+    if (scope.semesterId) p.set("semesterId", String(scope.semesterId));
+    if (scope.subjectId)  p.set("subjectId",  String(scope.subjectId));
+    if (scope.dateFrom)   p.set("dateFrom",   scope.dateFrom);
+    if (scope.dateTo)     p.set("dateTo",     scope.dateTo);
+    const r = await fetch(`/api/moderator/toggles?${p}`);
     if (r.ok) setToggles(await r.json());
     setLoading(false);
-  }, [course, semester]);
+  }, [course, semester, scope.collegeId, scope.courseId, scope.semesterId, scope.subjectId, scope.dateFrom, scope.dateTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  const canWrite = !!(scope.courseId && scope.semesterId);
 
   const toggle = async (featureName: string, currentEnabled: boolean, forcedActive: boolean) => {
     if (forcedActive && !currentEnabled) return;
     if (forcedActive && currentEnabled) return;
+    if (!canWrite) { setToast("Select a specific College, Course and Semester before toggling a feature."); setTimeout(() => setToast(null), 3500); return; }
     setSaving(featureName);
     const r = await fetch(`/api/moderator/toggles/${featureName}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ course, semester, enabled: !currentEnabled, updatedByName: userName, updatedById: userId }),
+      body: JSON.stringify({
+        course, semester, enabled: !currentEnabled, updatedByName: userName, updatedById: userId,
+        collegeId: scope.collegeId, courseId: scope.courseId, semesterId: scope.semesterId, subjectId: scope.subjectId,
+      }),
     });
     if (r.ok) {
       setToggles((prev) => prev.map((t) => t.featureName === featureName ? { ...t, enabled: !currentEnabled } : t));
@@ -98,8 +225,13 @@ function FeatureTogglesTab({ userName, userId }: { userName: string; userId?: nu
           <h2 className="text-xl font-bold text-slate-900">Feature Toggles</h2>
           <p className="text-sm text-slate-500 mt-0.5">Control which features are visible to students in your scope.</p>
         </div>
-        <ScopePicker course={course} semester={semester} onCourse={setCourse} onSemester={setSemester} />
+        <ModeratorFilterBar scope={scope} onChange={patchScope} />
       </div>
+      {!canWrite && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Select a specific College, Course and Semester above to toggle a feature. Showing platform-wide defaults for now.
+        </p>
+      )}
 
       <AnimatePresence>
         {toast && (
@@ -165,8 +297,10 @@ function FeatureTogglesTab({ userName, userId }: { userName: string; userId?: nu
    STUDY MATERIALS TAB
 ══════════════════════════════════════════════════════════════ */
 function StudyMaterialsTab({ userName }: { userName: string }) {
-  const [course, setCourse] = useState("CS301");
-  const [semester, setSemester] = useState("sem5");
+  const [scope, setScope] = useState<ModScope>({});
+  const course = scope.courseCode ?? "CS301";
+  const semester = scope.semesterLabel ?? "sem5";
+  const patchScope = (patch: Partial<ModScope>) => setScope((prev) => ({ ...prev, ...patch }));
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">("pending");
   const [materials, setMaterials] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -179,10 +313,18 @@ function StudyMaterialsTab({ userName }: { userName: string }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/moderator/materials?status=${statusFilter}&course=${course}&semester=${semester}`);
+    const p = new URLSearchParams({ status: statusFilter });
+    if (scope.collegeId)  p.set("collegeId",  String(scope.collegeId));
+    if (scope.courseId)   p.set("courseId",   String(scope.courseId));
+    if (scope.semesterId) p.set("semesterId", String(scope.semesterId));
+    if (scope.subjectId)  p.set("subjectId",  String(scope.subjectId));
+    if (scope.dateFrom)   p.set("dateFrom",   scope.dateFrom);
+    if (scope.dateTo)     p.set("dateTo",     scope.dateTo);
+    if (!scope.collegeId && !scope.courseId) { p.set("course", course); p.set("semester", semester); }
+    const r = await fetch(`/api/moderator/materials?${p}`);
     if (r.ok) setMaterials(await r.json());
     setLoading(false);
-  }, [statusFilter, course, semester]);
+  }, [statusFilter, course, semester, scope.collegeId, scope.courseId, scope.semesterId, scope.subjectId, scope.dateFrom, scope.dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -235,7 +377,7 @@ function StudyMaterialsTab({ userName }: { userName: string }) {
           <h2 className="text-xl font-bold text-slate-900">Study Materials</h2>
           <p className="text-sm text-slate-500 mt-0.5">Review pending uploads and manage approved/rejected materials.</p>
         </div>
-        <ScopePicker course={course} semester={semester} onCourse={setCourse} onSemester={setSemester} />
+        <ModeratorFilterBar scope={scope} onChange={patchScope} />
       </div>
 
       {/* Status filter */}
@@ -408,8 +550,10 @@ function StudyMaterialsTab({ userName }: { userName: string }) {
    EXAM SCHEDULES TAB
 ══════════════════════════════════════════════════════════════ */
 function ExamSchedulesTab({ userName }: { userName: string }) {
-  const [course, setCourse] = useState("CS301");
-  const [semester, setSemester] = useState("sem5");
+  const [scope, setScope] = useState<ModScope>({});
+  const course = scope.courseCode ?? "CS301";
+  const semester = scope.semesterLabel ?? "sem5";
+  const patchScope = (patch: Partial<ModScope>) => setScope((prev) => ({ ...prev, ...patch }));
   const [schedules, setSchedules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -419,24 +563,37 @@ function ExamSchedulesTab({ userName }: { userName: string }) {
   const [error, setError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
+  const canWrite = !!(scope.courseId && scope.semesterId);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/moderator/exam-schedules?course=${course}&semester=${semester}`);
+    const p = new URLSearchParams({ course, semester });
+    if (scope.collegeId)  p.set("collegeId",  String(scope.collegeId));
+    if (scope.courseId)   p.set("courseId",   String(scope.courseId));
+    if (scope.semesterId) p.set("semesterId", String(scope.semesterId));
+    if (scope.subjectId)  p.set("subjectId",  String(scope.subjectId));
+    if (scope.dateFrom)   p.set("dateFrom",   scope.dateFrom);
+    if (scope.dateTo)     p.set("dateTo",     scope.dateTo);
+    const r = await fetch(`/api/moderator/exam-schedules?${p}`);
     if (r.ok) setSchedules(await r.json());
     setLoading(false);
-  }, [course, semester]);
+  }, [course, semester, scope.collegeId, scope.courseId, scope.semesterId, scope.subjectId, scope.dateFrom, scope.dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
     if (!form.title || !form.examSession) { setError("Title and exam session are required."); return; }
+    if (!canWrite) { setError("Select a specific College, Course and Semester before uploading."); return; }
     setSaving(true);
     setError("");
     const url = editing ? `/api/moderator/exam-schedules/${editing.id}` : "/api/moderator/exam-schedules";
     const method = editing ? "PATCH" : "POST";
     const r = await fetch(url, {
       method, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, course, semester, uploaderName: userName }),
+      body: JSON.stringify({
+        ...form, course, semester, uploaderName: userName,
+        collegeId: scope.collegeId, courseId: scope.courseId, semesterId: scope.semesterId, subjectId: scope.subjectId,
+      }),
     });
     setSaving(false);
     if (!r.ok) { const d = await r.json(); setError(d.error ?? "Failed"); return; }
@@ -465,12 +622,18 @@ function ExamSchedulesTab({ userName }: { userName: string }) {
           <p className="text-sm text-slate-500 mt-0.5">Upload and manage exam schedules by course and semester.</p>
         </div>
         <div className="flex items-center gap-3">
-          <ScopePicker course={course} semester={semester} onCourse={setCourse} onSemester={setSemester} />
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew}>
+          <ModeratorFilterBar scope={scope} onChange={patchScope} />
+          <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew} disabled={!canWrite}
+            title={!canWrite ? "Select a specific College, Course and Semester to upload." : undefined}>
             <Upload className="h-4 w-4 mr-1.5" /> Upload
           </Button>
         </div>
       </div>
+      {!canWrite && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Select a specific College, Course and Semester above to upload a date sheet.
+        </p>
+      )}
 
       <AnimatePresence>
         {toast && (
@@ -485,8 +648,8 @@ function ExamSchedulesTab({ userName }: { userName: string }) {
         : schedules.length === 0 ? (
           <div className="py-16 text-center text-slate-400">
             <Calendar className="h-8 w-8 mx-auto mb-3 text-slate-300" />
-            <p className="font-semibold">No exam date sheets for {course} × {semester}</p>
-            <Button size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNew}>
+            <p className="font-semibold">No exam date sheets found</p>
+            <Button size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNew} disabled={!canWrite}>
               <Upload className="h-4 w-4 mr-1" /> Upload First Date Sheet
             </Button>
           </div>
@@ -568,9 +731,11 @@ function ExamSchedulesTab({ userName }: { userName: string }) {
    TIMETABLES TAB
 ══════════════════════════════════════════════════════════════ */
 function TimetablesTab({ userName }: { userName: string }) {
-  const [course, setCourse] = useState("CS301");
-  const [semester, setSemester] = useState("sem5");
-  const [section, setSection] = useState("Section A");
+  const [scope, setScope] = useState<ModScope>({ section: "Section A" });
+  const course = scope.courseCode ?? "CS301";
+  const semester = scope.semesterLabel ?? "sem5";
+  const section = scope.section ?? "Section A";
+  const patchScope = (patch: Partial<ModScope>) => setScope((prev) => ({ ...prev, ...patch }));
   const [timetables, setTimetables] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -580,24 +745,37 @@ function TimetablesTab({ userName }: { userName: string }) {
   const [error, setError] = useState("");
   const [toast, setToast] = useState<string | null>(null);
 
+  const canWrite = !!(scope.courseId && scope.semesterId);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/moderator/timetables?course=${course}&semester=${semester}&section=${encodeURIComponent(section)}`);
+    const p = new URLSearchParams({ course, semester, section });
+    if (scope.collegeId)  p.set("collegeId",  String(scope.collegeId));
+    if (scope.courseId)   p.set("courseId",   String(scope.courseId));
+    if (scope.semesterId) p.set("semesterId", String(scope.semesterId));
+    if (scope.subjectId)  p.set("subjectId",  String(scope.subjectId));
+    if (scope.dateFrom)   p.set("dateFrom",   scope.dateFrom);
+    if (scope.dateTo)     p.set("dateTo",     scope.dateTo);
+    const r = await fetch(`/api/moderator/timetables?${p}`);
     if (r.ok) setTimetables(await r.json());
     setLoading(false);
-  }, [course, semester, section]);
+  }, [course, semester, section, scope.collegeId, scope.courseId, scope.semesterId, scope.subjectId, scope.dateFrom, scope.dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
   const save = async () => {
     if (!form.title || !form.section) { setError("Title and section are required."); return; }
+    if (!canWrite) { setError("Select a specific College, Course and Semester before uploading."); return; }
     setSaving(true);
     setError("");
     const url = editing ? `/api/moderator/timetables/${editing.id}` : "/api/moderator/timetables";
     const method = editing ? "PATCH" : "POST";
     const r = await fetch(url, {
       method, headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, course, semester, uploaderName: userName }),
+      body: JSON.stringify({
+        ...form, course, semester, uploaderName: userName,
+        collegeId: scope.collegeId, courseId: scope.courseId, semesterId: scope.semesterId, subjectId: scope.subjectId,
+      }),
     });
     setSaving(false);
     if (!r.ok) { const d = await r.json(); setError(d.error ?? "Failed"); return; }
@@ -626,16 +804,18 @@ function TimetablesTab({ userName }: { userName: string }) {
           <p className="text-sm text-slate-500 mt-0.5">Upload and manage class timetables by course, semester, and section.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <ScopePicker course={course} semester={semester} onCourse={setCourse} onSemester={setSemester} />
-          <select className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={section} onChange={(e) => setSection(e.target.value)}>
-            {SECTION_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew}>
+          <ModeratorFilterBar scope={scope} onChange={patchScope} showSection />
+          <Button className="bg-blue-600 hover:bg-blue-700 text-white font-semibold" onClick={openNew} disabled={!canWrite}
+            title={!canWrite ? "Select a specific College, Course and Semester to upload." : undefined}>
             <Upload className="h-4 w-4 mr-1.5" /> Upload
           </Button>
         </div>
       </div>
+      {!canWrite && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Select a specific College, Course and Semester above to upload a timetable.
+        </p>
+      )}
 
       <AnimatePresence>
         {toast && (
@@ -650,8 +830,8 @@ function TimetablesTab({ userName }: { userName: string }) {
         : timetables.length === 0 ? (
           <div className="py-16 text-center text-slate-400">
             <BookOpen className="h-8 w-8 mx-auto mb-3 text-slate-300" />
-            <p className="font-semibold">No timetables for {course} × {semester} × {section}</p>
-            <Button size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNew}>
+            <p className="font-semibold">No timetables found for {section}</p>
+            <Button size="sm" className="mt-4 bg-blue-600 hover:bg-blue-700 text-white" onClick={openNew} disabled={!canWrite}>
               <Upload className="h-4 w-4 mr-1" /> Upload First Timetable
             </Button>
           </div>
@@ -801,6 +981,7 @@ const CATEGORY_OPTIONS = [
 type Category = typeof CATEGORY_OPTIONS[number]["value"];
 
 const SERVICE_TYPES = ["Printing Shop","Stationery","Laundry","Repair Shop","Medical Store","Gym","Coaching","Other"];
+const CUISINE_TYPES = ["Indian","Chinese","Fast Food","Cafe"];
 
 function categoryLabel(c: string) {
   if (c === "local_service") return "Local Service";
@@ -851,7 +1032,7 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
   // Category-specific filter state
   const [fRoomType,  setFRoomType]  = useState("");
   const [fGender,    setFGender]    = useState("");
-  const [fCuisine,   setFCuisine]   = useState("");
+  const [fCuisines,  setFCuisines]  = useState<string[]>([]);
   const [fDelivery,  setFDelivery]  = useState("");
   const [fService,   setFService]   = useState("");
 
@@ -863,6 +1044,7 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
   const [dialog,  setDialog]  = useState<{ mode: "add" | "edit"; listing?: any } | null>(null);
   const [form,    setForm]    = useState<ReturnType<typeof blankForm>>(blankForm());
   const [saving,  setSaving]  = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Approve / Reject dialog
   const [reviewing, setReviewing] = useState<{ listing: any; action: "approve" | "reject" } | null>(null);
@@ -887,13 +1069,13 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
     if (search)            p.set("search",    search);
     if (fRoomType)         p.set("roomType",  fRoomType);
     if (fGender)           p.set("gender",    fGender);
-    if (fCuisine)          p.set("cuisineType", fCuisine);
+    if (fCuisines.length)  p.set("cuisineTypes", fCuisines.join(","));
     if (fDelivery)         p.set("deliveryAvailable", fDelivery);
     if (fService)          p.set("serviceType", fService);
     const r = await fetch(`/api/moderator/local-listings?${p}`);
     if (r.ok) setListings(await r.json());
     setLoading(false);
-  }, [filterCollegeId, filterCategory, statusFilter, search, fRoomType, fGender, fCuisine, fDelivery, fService]);
+  }, [filterCollegeId, filterCategory, statusFilter, search, fRoomType, fGender, fCuisines, fDelivery, fService]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -908,6 +1090,10 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
     let photos: string[] = [];
     try { metadata = JSON.parse(listing.metadata || "{}"); } catch { /* */ }
     try { photos   = JSON.parse(listing.photos   || "[]"); } catch { /* */ }
+    // Migrate legacy single `cuisineType` string to the multi-select `cuisineTypes` array.
+    if (!Array.isArray(metadata.cuisineTypes) && typeof metadata.cuisineType === "string" && metadata.cuisineType) {
+      metadata = { ...metadata, cuisineTypes: [metadata.cuisineType] };
+    }
     setForm({
       ...listing,
       metadata, photos,
@@ -1021,7 +1207,7 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
           {/* Category */}
           <div className="flex flex-col gap-1">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</span>
-            <select value={filterCategory} onChange={e => { setFilterCategory(e.target.value); setFRoomType(""); setFGender(""); setFCuisine(""); setFDelivery(""); setFService(""); }}
+            <select value={filterCategory} onChange={e => { setFilterCategory(e.target.value); setFRoomType(""); setFGender(""); setFCuisines([]); setFDelivery(""); setFService(""); }}
               className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">All Categories</option>
               {CATEGORY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -1060,12 +1246,16 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
           </div>
         )}
         {filterCategory === "restaurant" && (
-          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
-            <select value={fCuisine} onChange={e => setFCuisine(e.target.value)}
-              className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">Cuisine</option>
-              {["Indian","Chinese","Fast Food","Cafe"].map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Cuisine</span>
+            {CUISINE_TYPES.map(v => (
+              <label key={v} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
+                <input type="checkbox" checked={fCuisines.includes(v)}
+                  onChange={e => setFCuisines(prev => e.target.checked ? [...prev, v] : prev.filter(c => c !== v))}
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-blue-600" />
+                {v}
+              </label>
+            ))}
             <select value={fDelivery} onChange={e => setFDelivery(e.target.value)}
               className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="">Delivery</option>
@@ -1161,9 +1351,13 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                     {meta2.roomType && <span>🛏 {meta2.roomType}</span>}
                     {meta2.gender   && <span>👤 {meta2.gender}</span>}
                     {(meta2.rentMin || meta2.rentMax) && <span>💰 ₹{meta2.rentMin || "?"}–{meta2.rentMax || "?"}/mo</span>}
-                    {meta2.cuisineType && <span>🍽 {meta2.cuisineType}</span>}
+                    {(Array.isArray(meta2.cuisineTypes) ? meta2.cuisineTypes : meta2.cuisineType ? [meta2.cuisineType] : []).length > 0 && (
+                      <span>🍽 {(Array.isArray(meta2.cuisineTypes) ? meta2.cuisineTypes : [meta2.cuisineType]).join(", ")}</span>
+                    )}
                     {meta2.deliveryAvailable === true && <span>🛵 Delivery</span>}
-                    {meta2.serviceType && <span>🔧 {meta2.serviceType}</span>}
+                    {meta2.serviceType && (
+                      <span>🔧 {meta2.serviceType === "Other" && meta2.serviceTypeOther ? meta2.serviceTypeOther : meta2.serviceType}</span>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-2 mt-1.5 text-[10px] text-slate-400">
@@ -1258,26 +1452,56 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
 
             {/* Photos */}
             <div>
-              <label className="text-sm font-semibold text-slate-700 block mb-1">Photos (image URLs)</label>
-              <div className="space-y-2">
-                {form.photos.map((url, i) => (
-                  <div key={i} className="flex gap-2">
-                    <Input value={url} onChange={e => {
-                      const arr = [...form.photos];
-                      arr[i] = e.target.value;
-                      setF({ photos: arr });
-                    }} placeholder="https://…" className="flex-1" />
-                    <Button size="sm" variant="ghost" className="text-red-500 hover:bg-red-50 flex-shrink-0"
-                      onClick={() => setF({ photos: form.photos.filter((_, j) => j !== i) })}>
-                      <X className="h-4 w-4" />
-                    </Button>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Photos</label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {form.photos.filter(Boolean).map((url, i) => (
+                  <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                    <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    <button type="button"
+                      onClick={() => setF({ photos: form.photos.filter((_, j) => j !== i) })}
+                      className="absolute top-1 right-1 h-5 w-5 flex items-center justify-center rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
                 ))}
-                <Button type="button" size="sm" variant="outline" className="text-xs gap-1"
-                  onClick={() => setF({ photos: [...form.photos, ""] })}>
-                  <Plus className="h-3.5 w-3.5" /> Add Photo URL
-                </Button>
+                <label className={cn(
+                  "aspect-square rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors",
+                  uploadingPhoto && "opacity-50 pointer-events-none",
+                )}>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" className="hidden"
+                    onChange={async e => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setUploadingPhoto(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append("image", file);
+                        const r = await fetch("/api/moderator/upload", { method: "POST", body: fd });
+                        if (r.ok) {
+                          const { url } = await r.json();
+                          setF({ photos: [...form.photos.filter(Boolean), url] });
+                        } else {
+                          const err = await r.json().catch(() => ({}));
+                          showToast((err as any).error || "Upload failed.", "error");
+                        }
+                      } catch {
+                        showToast("Upload failed.", "error");
+                      } finally {
+                        setUploadingPhoto(false);
+                      }
+                    }} />
+                  {uploadingPhoto ? (
+                    <RefreshCw className="h-5 w-5 text-slate-400 animate-spin" />
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5 text-slate-400" />
+                      <span className="text-[10px] font-semibold text-slate-400">Upload</span>
+                    </>
+                  )}
+                </label>
               </div>
+              <p className="text-[10px] text-slate-400 mt-1.5">JPEG, PNG, WEBP, GIF or AVIF. Max 8 MB per photo.</p>
             </div>
 
             {/* Description */}
@@ -1343,12 +1567,20 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                 <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Restaurant Details</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm font-semibold text-slate-700 block mb-1">Cuisine Type</label>
-                    <select value={(meta.cuisineType as string) ?? ""} onChange={e => setMeta({ cuisineType: e.target.value })}
-                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="">Select</option>
-                      {["Indian","Chinese","Fast Food","Cafe"].map(v => <option key={v} value={v}>{v}</option>)}
-                    </select>
+                    <label className="text-sm font-semibold text-slate-700 block mb-1">Cuisine Type <span className="text-slate-400 font-normal">(select any that apply)</span></label>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                      {CUISINE_TYPES.map(v => {
+                        const selected: string[] = Array.isArray(meta.cuisineTypes) ? meta.cuisineTypes : [];
+                        return (
+                          <label key={v} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                            <input type="checkbox" checked={selected.includes(v)}
+                              onChange={e => setMeta({ cuisineTypes: e.target.checked ? [...selected, v] : selected.filter(c => c !== v) })}
+                              className="h-4 w-4 rounded border-slate-300 accent-orange-600" />
+                            {v}
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-sm font-semibold text-slate-700">Delivery Available</label>
@@ -1368,11 +1600,16 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                 <p className="text-xs font-bold text-purple-700 uppercase tracking-wide">Service Details</p>
                 <div>
                   <label className="text-sm font-semibold text-slate-700 block mb-1">Service Type</label>
-                  <select value={(meta.serviceType as string) ?? ""} onChange={e => setMeta({ serviceType: e.target.value })}
+                  <select value={(meta.serviceType as string) ?? ""} onChange={e => setMeta({ serviceType: e.target.value, ...(e.target.value !== "Other" ? { serviceTypeOther: "" } : {}) })}
                     className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="">Select</option>
                     {SERVICE_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
+                  {meta.serviceType === "Other" && (
+                    <Input className="mt-2" value={(meta.serviceTypeOther as string) ?? ""}
+                      onChange={e => setMeta({ serviceTypeOther: e.target.value })}
+                      placeholder="Enter custom service name…" />
+                  )}
                 </div>
               </div>
             )}

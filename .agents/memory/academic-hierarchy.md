@@ -43,6 +43,16 @@ legacy text ones. When a route is next touched, prefer migrating it to
 use the FK columns and stop populating the text ones only once every
 call site has moved. Do not drop the text columns until then.
 
+`exam_schedules` and `class_timetables` (and `feature_toggles`, which
+already had college/course/semester) followed the same additive-FK pattern
+by also gaining a `subjectId` FK — kept alongside their legacy `course`/
+`semester` text fields for the same backward-compat reason.
+
+Public read-only endpoints for cascading dropdowns already exist:
+`/api/colleges`, `/api/colleges/:id/courses`, `/api/courses/:id/semesters`,
+`/api/semesters/:id/subjects`. Any new College→Course→Semester→Subject
+filter UI should reuse these rather than adding new academic endpoints.
+
 ## Known gaps (see follow-up notes below)
 
 - Admin/moderator routes — including the new academic ones — have no

@@ -6,7 +6,7 @@
 import {
   pgTable, serial, text, integer, boolean, timestamp, index,
 } from "drizzle-orm/pg-core";
-import { collegesTable, coursesTable, courseSemestersTable } from "./academic";
+import { collegesTable, coursesTable, courseSemestersTable, subjectsTable } from "./academic";
 
 /* ─── Semesters ────────────────────────────────────────────── */
 export const semestersTable = pgTable("semesters", {
@@ -49,6 +49,8 @@ export const featureTogglesTable = pgTable("feature_toggles", {
   collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "cascade" }),
   courseId: integer("course_id").references(() => coursesTable.id, { onDelete: "cascade" }),
   semesterId: integer("semester_id").references(() => courseSemestersTable.id, { onDelete: "cascade" }),
+  // Optional finer-grained scope; null = applies to every subject in the course × semester.
+  subjectId: integer("subject_id").references(() => subjectsTable.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").notNull().default(true),
   updatedById: integer("updated_by_id"),
   updatedByName: text("updated_by_name"),
@@ -79,6 +81,11 @@ export const examSchedulesTable = pgTable("exam_schedules", {
   title: text("title").notNull(),
   course: text("course").notNull(),
   semester: text("semester").notNull(),
+  // Normalized scope (nullable during rollout) — powers the moderator filter bar.
+  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "set null" }),
+  courseId: integer("course_id").references(() => coursesTable.id, { onDelete: "set null" }),
+  semesterId: integer("semester_id").references(() => courseSemestersTable.id, { onDelete: "set null" }),
+  subjectId: integer("subject_id").references(() => subjectsTable.id, { onDelete: "set null" }),
   examSession: text("exam_session").notNull(),  // "End-Semester Dec 2025"
   dateFrom: text("date_from"),
   dateTo: text("date_to"),
@@ -88,7 +95,9 @@ export const examSchedulesTable = pgTable("exam_schedules", {
   uploadedById: integer("uploaded_by_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("exam_schedules_scope_idx").on(t.collegeId, t.courseId, t.semesterId),
+]);
 
 /* ─── Class Timetables ─────────────────────────────────────── */
 export const classTimetablesTable = pgTable("class_timetables", {
@@ -97,6 +106,11 @@ export const classTimetablesTable = pgTable("class_timetables", {
   course: text("course").notNull(),
   semester: text("semester").notNull(),
   section: text("section").notNull(),   // "Section A"
+  // Normalized scope (nullable during rollout) — powers the moderator filter bar.
+  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "set null" }),
+  courseId: integer("course_id").references(() => coursesTable.id, { onDelete: "set null" }),
+  semesterId: integer("semester_id").references(() => courseSemestersTable.id, { onDelete: "set null" }),
+  subjectId: integer("subject_id").references(() => subjectsTable.id, { onDelete: "set null" }),
   effectiveFrom: text("effective_from"),
   effectiveTo: text("effective_to"),
   fileUrl: text("file_url"),
@@ -105,7 +119,9 @@ export const classTimetablesTable = pgTable("class_timetables", {
   uploadedById: integer("uploaded_by_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("class_timetables_scope_idx").on(t.collegeId, t.courseId, t.semesterId),
+]);
 
 /* ─── Audit Log ────────────────────────────────────────────── */
 export const auditLogTable = pgTable("audit_log", {

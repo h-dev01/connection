@@ -10,6 +10,7 @@ import statsRouter from "./stats";
 import adminRouter from "./admin";
 import academicRouter from "./academic";
 import moderatorRouter from "./moderator";
+import uploadRouter from "./upload";
 
 const router: IRouter = Router();
 
@@ -18,6 +19,7 @@ router.use(authRouter);
 router.use(adminRouter);
 router.use(academicRouter);
 router.use(moderatorRouter);
+router.use(uploadRouter);
 router.use(usersRouter);
 router.use(communityRouter);
 router.use(studyRouter);
