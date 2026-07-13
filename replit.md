@@ -4,12 +4,13 @@ A full-stack Campus Super App for college students — study, connect, trade, an
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
-- `pnpm --filter @workspace/college-connect run dev` — run the frontend (port from $PORT)
+- The "Start application" workflow runs `bash start.sh`, which starts the API server on port 8080 and the frontend (Vite) on port 5000 — this is what the Replit preview uses.
+- `pnpm --filter @workspace/api-server run dev` — run the API server alone (port 8080)
+- `pnpm --filter @workspace/college-connect run dev` — run the frontend alone (port from $PORT)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string, `SESSION_SECRET` — session key
+- Required env: `DATABASE_URL` — Postgres connection string (already provisioned), `SESSION_SECRET` — session key (already set)
 
 ## Stack
 
