@@ -4,3 +4,4 @@
 - [Multi-college academic hierarchy](academic-hierarchy.md) — colleges→courses→course_semesters→subjects normalized with FKs; existing tables got additive nullable FK+soft-delete columns, legacy text fields kept for compat.
 - [College email-domain-gated signup](college-email-domain-signup.md) — colleges have unique emailDomain; signup uses collegeId/courseId/semesterId, validated server-side against domain + hierarchy.
 - [Moderator photo upload storage](moderator-image-upload.md) — listing photos saved to local disk via multer (no object-storage integration set up); not persistent across redeploys.
+- [Marketplace restaurants & roommate finder](marketplace-extensions.md) — restaurants are moderator-approved local_listings (read-only); roommate ads reuse the listings table with listingType "roommate".

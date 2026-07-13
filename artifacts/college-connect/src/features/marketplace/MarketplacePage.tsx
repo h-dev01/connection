@@ -5,14 +5,14 @@ import {
   Search, Plus, Heart, Share2, ShieldCheck, Flame, Tag,
   ArrowRight, ShoppingBag, Users, X, Save, Image as ImageIcon,
   Phone, MapPin, Package, ChevronLeft, ChevronRight, Trash2,
-  Upload, Star, Camera, Edit2,
+  Upload, Star, Camera, Edit2, UtensilsCrossed, Bike, ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ActionMenu, ActionToast } from "@/components/shared/ContentActions";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,29 @@ interface Housing {
   sellerUser: string;
 }
 
+interface RoommatePost {
+  id: string;
+  title: string;
+  budget: string;
+  location: string;
+  desc: string;
+  sellerName: string;
+  sellerUser: string;
+  postedAt: string;
+}
+
+interface Restaurant {
+  id: string;
+  name: string;
+  photo: string;
+  description: string;
+  address: string | null;
+  contactNumber: string | null;
+  googleMapsLink: string | null;
+  cuisineTypes: string[];
+  deliveryAvailable: boolean;
+}
+
 interface Banner {
   id: string;
   title: string;
@@ -73,7 +96,7 @@ interface ListingRow {
   price: number;
   priceUnit: string;
   category: string;
-  listingType: "buy_sell" | "housing" | "service";
+  listingType: "buy_sell" | "housing" | "service" | "roommate";
   imageUrl: string | null;
   sellerName: string;
   sellerRating: number;
@@ -103,6 +126,57 @@ async function createListing(payload: Record<string, unknown>): Promise<ListingR
 async function deleteListing(id: number): Promise<void> {
   const res = await fetch(`/api/marketplace/listings/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete listing");
+}
+
+interface LocalListingRow {
+  id: number;
+  name: string;
+  photos: string;
+  description: string | null;
+  address: string | null;
+  contactNumber: string | null;
+  googleMapsLink: string | null;
+  metadata: string;
+}
+
+async function fetchRestaurants(): Promise<LocalListingRow[]> {
+  const res = await fetch("/api/marketplace/restaurants");
+  if (!res.ok) throw new Error("Failed to load restaurants");
+  return res.json();
+}
+
+function listingToRoommate(l: ListingRow): RoommatePost {
+  return {
+    id: String(l.id),
+    title: l.title,
+    budget: `₹${l.price.toLocaleString("en-IN")}${l.priceUnit || "/mo"}`,
+    location: l.location ?? "Campus area",
+    desc: l.description ?? "",
+    sellerName: l.sellerName,
+    sellerUser: l.sellerName,
+    postedAt: new Date(l.createdAt).toLocaleDateString(),
+  };
+}
+
+function localListingToRestaurant(l: LocalListingRow): Restaurant {
+  let meta: Record<string, unknown> = {};
+  try { meta = JSON.parse(l.metadata || "{}"); } catch { /* ignore malformed metadata */ }
+  let photos: string[] = [];
+  try { photos = JSON.parse(l.photos || "[]"); } catch { /* ignore malformed photos */ }
+  const cuisineTypes = Array.isArray(meta.cuisineTypes)
+    ? (meta.cuisineTypes as string[])
+    : (meta.cuisineType ? [String(meta.cuisineType)] : []);
+  return {
+    id: String(l.id),
+    name: l.name,
+    photo: photos[0] || CAT_IMAGES.OTHER,
+    description: l.description ?? "",
+    address: l.address,
+    contactNumber: l.contactNumber,
+    googleMapsLink: l.googleMapsLink,
+    cuisineTypes,
+    deliveryAvailable: !!meta.deliveryAvailable,
+  };
 }
 
 function listingToProduct(l: ListingRow): Product {
@@ -465,6 +539,139 @@ function SellListingModal({ onClose, onAdd }: { onClose: () => void; onAdd: (p: 
   );
 }
 
+/* ─── Roommate Ad Modal ──────────────────────────────────── */
+function RoommateModal({ onClose, onAdd }: { onClose: () => void; onAdd: (p: { title: string; budget: string; location: string; desc: string }) => void }) {
+  const [form, setForm] = useState({ postType: "Looking for a Roommate", budget: "", location: "", desc: "" });
+  const s = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const valid = form.budget.trim() && form.location.trim() && form.desc.trim();
+
+  const submit = () => {
+    onAdd({
+      title: form.postType,
+      budget: form.budget,
+      location: form.location,
+      desc: form.desc,
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, y: 30, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20 }}
+        transition={{ type: "spring", stiffness: 280, damping: 24 }}
+        className="relative w-full max-w-xl mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        onClick={e => e.stopPropagation()}>
+
+        <div className="px-7 py-5 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900">Post a Roommate Ad</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Tell other students what you're looking for</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-7 py-5 space-y-5">
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">Post Type</label>
+            <div className="flex flex-wrap gap-2">
+              {["Looking for a Roommate", "Have a Spare Room"].map(t => (
+                <button key={t} onClick={() => s("postType", t)}
+                  className={cn(
+                    "text-xs font-semibold px-3 py-1.5 rounded-full border transition-all",
+                    form.postType === t
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-blue-400 hover:text-blue-600"
+                  )}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Budget *</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500">₹</span>
+                <Input className="h-10 pl-6 bg-slate-50" placeholder="6,000/mo"
+                  value={form.budget} onChange={e => s("budget", e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                <MapPin className="inline h-3.5 w-3.5 mr-1 text-blue-500" />Preferred Area *
+              </label>
+              <Input className="h-10 bg-slate-50" placeholder="e.g. Near North Campus"
+                value={form.location} onChange={e => s("location", e.target.value)} />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">About You & What You're Looking For *</label>
+            <textarea rows={4}
+              className="w-full rounded-xl border border-input bg-slate-50 px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+              placeholder="Major, lifestyle (early bird / night owl), habits, move-in date, gender preference, contact info…"
+              value={form.desc} onChange={e => s("desc", e.target.value)} />
+          </div>
+        </div>
+
+        <div className="px-7 py-5 border-t border-slate-100 flex gap-3 items-center">
+          <Button variant="outline" className="px-5 h-11" onClick={onClose}>Cancel</Button>
+          <Button className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 font-bold" disabled={!valid} onClick={submit}>
+            <Upload className="h-4 w-4 mr-2" /> Post Ad
+          </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* ─── Restaurant Card ────────────────────────────────────── */
+function RestaurantCard({ restaurant }: { restaurant: Restaurant }) {
+  return (
+    <Card className="overflow-hidden border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col">
+      <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
+        <img src={restaurant.photo} alt={restaurant.name} className="w-full h-full object-cover" />
+        {restaurant.deliveryAvailable && (
+          <Badge className="absolute top-3 left-3 bg-emerald-600 text-white border-none font-bold text-[10px]">
+            <Bike className="h-3 w-3 mr-1" /> Delivery Available
+          </Badge>
+        )}
+      </div>
+      <CardContent className="p-5 flex-1">
+        <h3 className="font-bold text-slate-900 text-base leading-snug mb-1">{restaurant.name}</h3>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {restaurant.cuisineTypes.map(c => (
+            <Badge key={c} variant="outline" className="bg-orange-50 border-orange-200 text-orange-700 text-[10px] font-semibold">{c}</Badge>
+          ))}
+        </div>
+        {restaurant.description && <p className="text-xs text-slate-500 line-clamp-2 mb-3">{restaurant.description}</p>}
+        {restaurant.address && (
+          <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
+            <MapPin className="h-3 w-3 flex-none" /><span>{restaurant.address}</span>
+          </div>
+        )}
+        {restaurant.contactNumber && (
+          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Phone className="h-3 w-3 flex-none" /><span>{restaurant.contactNumber}</span>
+          </div>
+        )}
+      </CardContent>
+      {restaurant.googleMapsLink && (
+        <CardFooter className="p-4 pt-0">
+          <a href={restaurant.googleMapsLink} target="_blank" rel="noopener noreferrer" className="w-full">
+            <Button variant="outline" className="w-full h-9 border-slate-200 text-slate-700 text-sm">
+              <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View on Maps
+            </Button>
+          </a>
+        </CardFooter>
+      )}
+    </Card>
+  );
+}
+
 /* ─── Product Card ───────────────────────────────────────── */
 function ProductCard({ product, isMod, onDelete, onReport }: {
   product: Product; isMod: boolean;
@@ -550,12 +757,17 @@ export default function Marketplace() {
 
   const queryClient = useQueryClient();
   const { data: listings = [] } = useQuery({ queryKey: ["listings"], queryFn: fetchListings });
+  const { data: restaurantRows = [], isLoading: restaurantsLoading } = useQuery({ queryKey: ["restaurants"], queryFn: fetchRestaurants });
 
   const products = listings.filter(l => l.listingType === "buy_sell").map(listingToProduct);
   const housing  = listings.filter(l => l.listingType === "housing").map(listingToHousing);
+  const roommatePosts = listings.filter(l => l.listingType === "roommate").map(listingToRoommate);
+  const restaurants = restaurantRows.map(localListingToRestaurant);
 
   const [banners,  setBanners]    = useState<Banner[]>(DEFAULT_BANNERS);
   const [showForm, setShowForm]   = useState(false);
+  const [showRoommateForm, setShowRoommateForm] = useState(false);
+  const [activeTab, setActiveTab] = useState("buy-sell");
   const [search,   setSearch]     = useState("");
   const [filterCat, setFilterCat] = useState("ALL");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "warn" } | null>(null);
@@ -598,12 +810,13 @@ export default function Marketplace() {
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           {user ? (
-            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex-none" onClick={() => setShowForm(true)}>
-              <Plus className="mr-2 h-4 w-4" /> Sell Item
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex-none"
+              onClick={() => activeTab === "roommate" ? setShowRoommateForm(true) : setShowForm(true)}>
+              <Plus className="mr-2 h-4 w-4" /> {activeTab === "roommate" ? "Post Roommate Ad" : "Sell Item"}
             </Button>
           ) : (
             <Button variant="outline" className="flex-none" onClick={() => notify("Please log in to post a listing.", "warn")}>
-              <Plus className="mr-2 h-4 w-4" /> Sell Item
+              <Plus className="mr-2 h-4 w-4" /> {activeTab === "roommate" ? "Post Roommate Ad" : "Sell Item"}
             </Button>
           )}
         </div>
@@ -643,13 +856,42 @@ export default function Marketplace() {
           )}
         </AnimatePresence>
 
-        <Tabs defaultValue="buy-sell" className="w-full">
+        {/* Roommate ad modal */}
+        <AnimatePresence>
+          {showRoommateForm && (
+            <RoommateModal
+              key="roommate-modal"
+              onClose={() => setShowRoommateForm(false)}
+              onAdd={(p) => {
+                createMutation.mutate({
+                  title: p.title,
+                  description: p.desc,
+                  price: Number(p.budget.replace(/[^0-9.]/g, "")) || 0,
+                  priceUnit: "/mo",
+                  category: "ROOMMATE",
+                  listingType: "roommate",
+                  sellerName: user?.name ?? "You",
+                  location: p.location,
+                });
+                notify("🎉 Your roommate ad is live!");
+              }}
+            />
+          )}
+        </AnimatePresence>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="bg-white border border-slate-200 p-1 h-auto rounded-lg mb-6">
             <TabsTrigger value="buy-sell" className="px-6 py-2.5 rounded-md data-[state=active]:bg-slate-100 data-[state=active]:text-blue-700 font-semibold text-slate-600">
               Buy / Sell Items
             </TabsTrigger>
             <TabsTrigger value="housing" className="px-6 py-2.5 rounded-md data-[state=active]:bg-slate-100 data-[state=active]:text-blue-700 font-semibold text-slate-600">
               Housing
+            </TabsTrigger>
+            <TabsTrigger value="restaurants" className="px-6 py-2.5 rounded-md data-[state=active]:bg-slate-100 data-[state=active]:text-blue-700 font-semibold text-slate-600">
+              Restaurants
+            </TabsTrigger>
+            <TabsTrigger value="roommate" className="px-6 py-2.5 rounded-md data-[state=active]:bg-slate-100 data-[state=active]:text-blue-700 font-semibold text-slate-600">
+              Roommate Finder
             </TabsTrigger>
             <TabsTrigger value="services" className="px-6 py-2.5 rounded-md data-[state=active]:bg-slate-100 data-[state=active]:text-blue-700 font-semibold text-slate-600">
               Local Services
@@ -698,7 +940,7 @@ export default function Marketplace() {
                   </div>
                 )}
               </div>
-              <Sidebar onSell={() => setShowForm(true)} />
+              <Sidebar onSell={() => setShowForm(true)} onFindRoommate={() => setActiveTab("roommate")} roommateCount={roommatePosts.length} />
             </div>
           </TabsContent>
 
@@ -747,6 +989,72 @@ export default function Marketplace() {
             </div>
           </TabsContent>
 
+          {/* ── Restaurants ── */}
+          <TabsContent value="restaurants">
+            {restaurantsLoading ? (
+              <div className="text-center py-20 text-slate-400">Loading restaurants…</div>
+            ) : restaurants.length === 0 ? (
+              <div className="text-center py-20 text-slate-400">
+                <UtensilsCrossed className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                <p className="font-semibold">No restaurants listed yet</p>
+                <p className="text-sm mt-1">Approved campus-area restaurants will appear here.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {restaurants.map(r => <RestaurantCard key={r.id} restaurant={r} />)}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Roommate Finder ── */}
+          <TabsContent value="roommate">
+            <div className="mt-2 space-y-4">
+              <AnimatePresence>
+                {roommatePosts.map((post) => {
+                  const isOwner = post.sellerUser === user?.name;
+                  return (
+                    <motion.div key={post.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                      <Card className="overflow-hidden border-slate-200 shadow-sm">
+                        <CardContent className="p-6 flex flex-col md:flex-row md:items-start gap-4">
+                          <Avatar className="h-12 w-12 border border-slate-200 flex-none">
+                            <AvatarFallback className="bg-blue-100 text-blue-700 font-bold">{post.sellerName[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start gap-3 mb-1">
+                              <div>
+                                <Badge className="bg-blue-50 text-blue-700 border-blue-200 mb-1.5 font-bold text-[10px]">{post.title.toUpperCase()}</Badge>
+                                <p className="font-bold text-slate-900">{post.sellerName}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-lg font-black text-blue-600 whitespace-nowrap">{post.budget}</p>
+                                {isOwner && (
+                                  <button onClick={() => { deleteMutation.mutate(Number(post.id)); notify("Roommate ad removed."); }}
+                                    className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-sm text-slate-600 mb-2">{post.desc}</p>
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                              <MapPin className="h-3 w-3 flex-none" /><span>{post.location}</span>
+                              <span className="text-slate-300 mx-1">•</span><span>{post.postedAt}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+              {roommatePosts.length === 0 && (
+                <div className="text-center py-20 text-slate-400">
+                  <Users className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                  <p className="font-semibold">No roommate ads yet</p>
+                  <p className="text-sm mt-1">Be the first to post one!</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+
           <TabsContent value="services">
             <div className="text-center py-20 text-slate-400">Local services coming soon.</div>
           </TabsContent>
@@ -757,7 +1065,7 @@ export default function Marketplace() {
 }
 
 /* ─── Sidebar ────────────────────────────────────────────── */
-function Sidebar({ onSell }: { onSell: () => void }) {
+function Sidebar({ onSell, onFindRoommate, roommateCount }: { onSell: () => void; onFindRoommate: () => void; roommateCount: number }) {
   return (
     <div className="w-full lg:w-80 space-y-6">
       {/* Quick sell CTA */}
@@ -773,30 +1081,20 @@ function Sidebar({ onSell }: { onSell: () => void }) {
       </Card>
 
       {/* Roommate finder */}
-      <Card className="bg-slate-900 text-white border-none shadow-lg">
+      <Card className="bg-slate-900 text-white border-none shadow-lg cursor-pointer hover:bg-slate-800/80 transition-colors" onClick={onFindRoommate}>
         <CardContent className="p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-blue-500/20 rounded-lg"><Users className="h-6 w-6 text-blue-400" /></div>
             <h3 className="text-lg font-bold">Roommate Finder</h3>
           </div>
-          <p className="text-slate-400 text-sm mb-6">Find compatible roommates based on major, lifestyle, and budget.</p>
-          <div className="space-y-4 mb-6">
-            {[
-              { name: "Ananya K.", sub: "CS Major • Early Bird", src: "https://i.pravatar.cc/150?u=a042581f4e29026024d" },
-              { name: "Vikram S.", sub: "Design • Night Owl",    src: "https://i.pravatar.cc/150?u=a042581f4e29026704d" },
-            ].map(r => (
-              <div key={r.name} className="flex items-center justify-between bg-slate-800/50 p-3 rounded-xl border border-slate-700/50 cursor-pointer hover:bg-slate-800 transition-colors">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10 border border-slate-600">
-                    <AvatarImage src={r.src} /><AvatarFallback>{r.name[0]}</AvatarFallback>
-                  </Avatar>
-                  <div><p className="text-sm font-bold text-white">{r.name}</p><p className="text-xs text-slate-400">{r.sub}</p></div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-slate-500" />
-              </div>
-            ))}
-          </div>
-          <Button className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold">Match Me Now</Button>
+          <p className="text-slate-400 text-sm mb-6">
+            {roommateCount > 0
+              ? `${roommateCount} roommate ${roommateCount === 1 ? "ad" : "ads"} posted by students right now.`
+              : "Post an ad or browse students looking for roommates near campus."}
+          </p>
+          <Button className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold" onClick={onFindRoommate}>
+            Open Roommate Finder <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
         </CardContent>
       </Card>
 

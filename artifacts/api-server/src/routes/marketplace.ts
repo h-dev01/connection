@@ -2,9 +2,9 @@
  * Marketplace routes — listings for buy/sell, housing, services.
  */
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, desc, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { db, listingsTable } from "@workspace/db";
+import { db, listingsTable, localListingsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -12,6 +12,28 @@ const router: IRouter = Router();
 router.get("/marketplace/listings", async (_req, res): Promise<void> => {
   const listings = await db.select().from(listingsTable).orderBy(desc(listingsTable.createdAt)).limit(50);
   res.json(listings);
+});
+
+// GET /marketplace/restaurants — approved restaurant local-listings (student-facing, read-only)
+router.get("/marketplace/restaurants", async (req, res): Promise<void> => {
+  const collegeId = parseInt((req.query.collegeId as string) ?? "", 10);
+  const conditions = [
+    isNull(localListingsTable.deletedAt),
+    eq(localListingsTable.category, "restaurant"),
+    eq(localListingsTable.status, "approved"),
+  ];
+  if (!isNaN(collegeId)) conditions.push(eq(localListingsTable.collegeId, collegeId));
+
+  const rows = await db
+    .select()
+    .from(localListingsTable)
+    .where(and(...conditions))
+    .orderBy(desc(localListingsTable.priorityScore), desc(localListingsTable.displayDate), desc(localListingsTable.createdAt))
+    .limit(100);
+
+  // Strip moderator-internal fields before returning to students.
+  const publicRows = rows.map(({ priorityScore, displayDate, addedByModeratorId, rejectionReason, ...rest }) => rest);
+  res.json(publicRows);
 });
 
 // GET /marketplace/highlights — featured listings for dashboard
@@ -37,7 +59,7 @@ const CreateListing = z.object({
   price: z.number(),
   priceUnit: z.string().default(""),
   category: z.string().min(1),
-  listingType: z.enum(["buy_sell", "housing", "service"]).default("buy_sell"),
+  listingType: z.enum(["buy_sell", "housing", "service", "roommate"]).default("buy_sell"),
   imageUrl: z.string().optional(),
   sellerName: z.string().min(1),
   location: z.string().optional(),

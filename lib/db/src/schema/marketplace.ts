@@ -16,7 +16,7 @@ export const listingsTable = pgTable("listings", {
   price: real("price").notNull(),
   priceUnit: text("price_unit").notNull().default(""),
   category: text("category").notNull(),
-  // listingType: buy_sell | housing | service
+  // listingType: buy_sell | housing | service | roommate
   listingType: text("listing_type").notNull().default("buy_sell"),
   imageUrl: text("image_url"),
   sellerName: text("seller_name").notNull(),
