@@ -663,6 +663,7 @@ export default function Marketplace() {
         {/* Ad banner carousel — moderator-managed, see Moderator → Ad Banners */}
         <BannerCarousel
           placement="marketplace"
+          collegeId={user?.collegeId}
           onBannerClick={(linkType) => {
             const tab = LINK_TYPE_TO_TAB[linkType];
             if (tab) setActiveTab(tab);

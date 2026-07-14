@@ -22,22 +22,27 @@ interface Banner {
   durationMs: number;
 }
 
-async function fetchBanners(placement: "study" | "marketplace"): Promise<Banner[]> {
-  const res = await fetch(`/api/banners?placement=${placement}`);
+async function fetchBanners(placement: "study" | "marketplace", collegeId?: number): Promise<Banner[]> {
+  const params = new URLSearchParams({ placement });
+  if (collegeId !== undefined) params.set("collegeId", String(collegeId));
+  const res = await fetch(`/api/banners?${params.toString()}`);
   if (!res.ok) throw new Error("Failed to load banners");
   return res.json();
 }
 
 export function BannerCarousel({
   placement,
+  collegeId,
   onBannerClick,
 }: {
   placement: "study" | "marketplace";
+  /** The current student's collegeId, so only banners targeting their college (or global ones) are shown. */
+  collegeId?: number;
   onBannerClick: (linkType: BannerLinkType) => void;
 }) {
   const { data: banners = [] } = useQuery({
-    queryKey: ["banners", placement],
-    queryFn: () => fetchBanners(placement),
+    queryKey: ["banners", placement, collegeId],
+    queryFn: () => fetchBanners(placement, collegeId),
   });
 
   const [current, setCurrent] = useState(0);

@@ -802,7 +802,7 @@ export default function Study() {
             exit={{ opacity: 0, y: -10 }}
           >
             {/* Ad banner carousel — moderator-managed, see Moderator → Ad Banners */}
-            <BannerCarousel placement="study" onBannerClick={goToMarketplace} />
+            <BannerCarousel placement="study" collegeId={user?.collegeId} onBannerClick={goToMarketplace} />
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 space-y-8">

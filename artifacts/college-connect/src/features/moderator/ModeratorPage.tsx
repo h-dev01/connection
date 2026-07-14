@@ -1046,18 +1046,24 @@ function blankBannerForm() {
     linkType: "none" as "none" | "restaurant" | "pg" | "local_service",
     durationSec: 5,
     status: "active" as "active" | "inactive",
-    collegeId: undefined as number | undefined, collegeName: "",
+    // Empty array = shown to every college. Non-empty = only those colleges.
+    collegeIds: [] as number[],
   };
 }
 
 function BannersTab({ userName, userId }: { userName: string; userId?: number }) {
   const [banners, setBanners] = useState<any[]>([]);
+  const [colleges, setColleges] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [dialog, setDialog] = useState<{ mode: "add" | "edit"; banner?: any } | null>(null);
   const [form, setForm] = useState(blankBannerForm());
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  useEffect(() => { fetch("/api/colleges").then(r => r.ok ? r.json() : []).then(setColleges).catch(() => {}); }, []);
+
+  const collegeName = (id: number) => colleges.find(c => c.id === id)?.name ?? `#${id}`;
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToast({ msg, type });
@@ -1081,10 +1087,14 @@ function BannersTab({ userName, userId }: { userName: string; userId?: number })
       title: banner.title, subtitle: banner.subtitle ?? "", imageUrl: banner.imageUrl,
       placement: banner.placement, linkType: banner.linkType,
       durationSec: Math.round((banner.durationMs ?? 5000) / 1000),
-      status: banner.status, collegeId: banner.collegeId ?? undefined, collegeName: banner.collegeName ?? "",
+      status: banner.status, collegeIds: Array.isArray(banner.collegeIds) ? banner.collegeIds : [],
     });
     setDialog({ mode: "edit", banner });
   };
+
+  const toggleCollege = (id: number) => setF({
+    collegeIds: form.collegeIds.includes(id) ? form.collegeIds.filter(c => c !== id) : [...form.collegeIds, id],
+  });
 
   const handleSave = async () => {
     if (!form.title.trim() || !form.imageUrl) return;
@@ -1093,7 +1103,7 @@ function BannersTab({ userName, userId }: { userName: string; userId?: number })
       title: form.title, subtitle: form.subtitle, imageUrl: form.imageUrl,
       placement: form.placement, linkType: form.linkType,
       durationMs: Math.min(15000, Math.max(2000, Number(form.durationSec) * 1000 || 5000)),
-      status: form.status, collegeId: form.collegeId, collegeName: form.collegeName,
+      status: form.status, collegeIds: form.collegeIds,
       addedByModerator: userName, addedByModeratorId: userId,
     };
     const isAdd = dialog?.mode === "add";
@@ -1178,6 +1188,11 @@ function BannersTab({ userName, userId }: { userName: string; userId?: number })
                   <span>📍 {PLACEMENT_OPTIONS.find(p => p.value === b.placement)?.label ?? b.placement}</span>
                   <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" />{LINK_TYPE_OPTIONS.find(l => l.value === b.linkType)?.label ?? b.linkType}</span>
                   <span className="inline-flex items-center gap-1"><Timer className="h-3 w-3" />{Math.round((b.durationMs ?? 5000) / 1000)}s</span>
+                  <span className="inline-flex items-center gap-1">
+                    🎓 {Array.isArray(b.collegeIds) && b.collegeIds.length > 0
+                      ? b.collegeIds.map((id: number) => collegeName(id)).join(", ")
+                      : "All Colleges"}
+                  </span>
                 </div>
                 <div className="flex flex-wrap gap-2 mt-1.5 text-[10px] text-slate-400">
                   <span>By {b.addedByModerator}</span>
@@ -1296,6 +1311,29 @@ function BannersTab({ userName, userId }: { userName: string; userId?: number })
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold text-slate-700 block mb-1">Colleges</label>
+              <p className="text-xs text-slate-400 mb-2">
+                Leave everything unchecked to show this banner to every college. Check one or more to target only those colleges.
+              </p>
+              {colleges.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">No colleges set up yet — this banner will show to all colleges.</p>
+              ) : (
+                <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                  {colleges.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={form.collegeIds.includes(c.id)} onChange={() => toggleCollege(c.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-slate-400 mt-1.5">
+                {form.collegeIds.length === 0 ? "Showing to: All Colleges" : `Showing to: ${form.collegeIds.map(id => collegeName(id)).join(", ")}`}
+              </p>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

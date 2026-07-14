@@ -10,12 +10,12 @@
 import { pgTable, serial, text, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { collegesTable } from "./academic";
 
 export const bannersTable = pgTable("banners", {
   id: serial("id").primaryKey(),
-  collegeId: integer("college_id").references(() => collegesTable.id, { onDelete: "set null" }),
-  collegeName: text("college_name").notNull().default(""),
+  // Colleges this banner targets. Empty array = shown to every college (global banner).
+  // Stored as a native Postgres integer array so we can filter with `= ANY(...)`.
+  collegeIds: integer("college_ids").array().notNull().default([]),
   title: text("title").notNull(),
   subtitle: text("subtitle").notNull().default(""),
   // Public URL of the banner image (uploaded via POST /api/moderator/upload).

@@ -4,7 +4,7 @@
  * Moderator CRUD manages the full lifecycle, including soft delete.
  */
 import { Router, type IRouter } from "express";
-import { eq, and, desc, isNull, or } from "drizzle-orm";
+import { eq, and, desc, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, bannersTable, auditLogTable } from "@workspace/db";
 
@@ -18,15 +18,26 @@ async function writeAudit(entry: {
   await db.insert(auditLogTable).values(entry);
 }
 
-// GET /api/banners?placement=study|marketplace — public, active banners only
+// GET /api/banners?placement=study|marketplace&collegeId=123 — public, active banners only.
+// A banner with an empty collegeIds array is global (shown to everyone); otherwise it's only
+// returned when the requesting student's collegeId is in that banner's list.
 router.get("/banners", async (req, res): Promise<void> => {
   const placement = (req.query.placement as string | undefined)?.trim();
+  const collegeIdRaw = (req.query.collegeId as string | undefined)?.trim();
+  const collegeId = collegeIdRaw ? parseInt(collegeIdRaw, 10) : undefined;
+
   const conditions = [
     isNull(bannersTable.deletedAt),
     eq(bannersTable.status, "active"),
   ];
   if (placement === "study" || placement === "marketplace") {
     conditions.push(or(eq(bannersTable.placement, placement), eq(bannersTable.placement, "both"))!);
+  }
+  if (collegeId !== undefined && !isNaN(collegeId)) {
+    conditions.push(sql`(cardinality(${bannersTable.collegeIds}) = 0 OR ${collegeId} = ANY(${bannersTable.collegeIds}))`);
+  } else {
+    // No college context (e.g. logged-out visitor) — only show global banners.
+    conditions.push(sql`cardinality(${bannersTable.collegeIds}) = 0`);
   }
   const rows = await db
     .select()
@@ -53,8 +64,8 @@ router.get("/moderator/banners", async (req, res): Promise<void> => {
 });
 
 const BannerSchema = z.object({
-  collegeId: z.number().int().optional(),
-  collegeName: z.string().default(""),
+  // Empty array = global (shown to every college).
+  collegeIds: z.array(z.number().int()).default([]),
   title: z.string().min(1, "Title is required"),
   subtitle: z.string().default(""),
   imageUrl: z.string().min(1, "Banner image is required"),
@@ -78,7 +89,7 @@ router.post("/moderator/banners", async (req, res): Promise<void> => {
     action: "create_banner", entityType: "banner",
     entityId: String(row.id), entityLabel: row.title,
     afterState: JSON.stringify({ placement: row.placement, linkType: row.linkType, status: row.status }),
-    scope: row.collegeName || String(row.collegeId ?? ""),
+    scope: row.collegeIds && row.collegeIds.length > 0 ? row.collegeIds.join(",") : "all",
   });
 
   res.status(201).json(row);
