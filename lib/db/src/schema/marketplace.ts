@@ -24,6 +24,10 @@ export const listingsTable = pgTable("listings", {
   sellerVerified: boolean("seller_verified").notNull().default(false),
   location: text("location"),
   condition: text("condition"),
+  /** Roll number extracted from seller's email (before the @ sign). */
+  sellerRollNo: text("seller_roll_no"),
+  /** Structured contact info as JSON: { phone?, email?, instagram? } */
+  contact: text("contact"),
   featured: boolean("featured").notNull().default(false),
   // status: active | sold | disabled
   status: text("status").notNull().default("active"),

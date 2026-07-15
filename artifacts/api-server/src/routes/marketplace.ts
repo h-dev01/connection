@@ -62,6 +62,8 @@ const CreateListing = z.object({
   listingType: z.enum(["buy_sell", "housing", "service", "roommate"]).default("buy_sell"),
   imageUrl: z.string().optional(),
   sellerName: z.string().min(1),
+  sellerRollNo: z.string().optional(),
+  contact: z.string().optional(),
   location: z.string().optional(),
   condition: z.string().optional(),
 });

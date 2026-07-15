@@ -804,8 +804,8 @@ export default function Study() {
             {/* Ad banner carousel — moderator-managed, see Moderator → Ad Banners */}
             <BannerCarousel placement="study" collegeId={user?.collegeId} onBannerClick={goToMarketplace} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <div className="lg:col-span-2 space-y-8">
+            <div className="space-y-8">
+              <div className="space-y-8">
                 {isOn("study_materials") && (
                 <Card className="border-none shadow-sm">
                   <CardHeader className="pb-4">
@@ -973,72 +973,6 @@ export default function Study() {
                   </Card>
                   )}
                 </div>
-                )}
-              </div>
-
-              {/* Sidebar */}
-              <div className="space-y-6">
-                {isOn("academic_tools") && (
-                <Card className="border border-slate-100 shadow-sm">
-                  <CardHeader className="pb-3 border-b border-slate-50">
-                    <CardTitle className="text-lg font-bold">Academic Tools</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 space-y-4">
-                    <div className="p-4 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-1">Smart Timetable</p>
-                        <p className="text-sm font-semibold text-slate-900">Next Class: ML (14:00)</p>
-                        <p className="text-xs text-slate-500">Room 402, Block B</p>
-                      </div>
-                      <Clock className="h-8 w-8 text-blue-300" />
-                    </div>
-                    <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider mb-1">GPA Calculator</p>
-                        <p className="text-sm font-semibold text-slate-900">Current: 3.85 / 4.0</p>
-                        <p className="text-xs text-slate-500">Target: 3.90</p>
-                      </div>
-                      <TrendingUp className="h-8 w-8 text-emerald-300" />
-                    </div>
-                  </CardContent>
-                </Card>
-                )}
-
-                {isOn("career_corner") && (
-                <Card className="border border-slate-100 shadow-sm">
-                  <CardHeader className="pb-3 border-b border-slate-50 flex flex-row items-center justify-between">
-                    <CardTitle className="text-lg font-bold">Career Corner</CardTitle>
-                    <Button variant="ghost" size="sm" className="text-xs text-blue-600 h-8">View All</Button>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    {INTERNSHIPS.map((intern) => (
-                      <div key={intern.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 bg-slate-200 rounded-md flex items-center justify-center">
-                              <Briefcase className="h-5 w-5 text-slate-500" />
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-bold text-slate-900">{intern.title}</h4>
-                              <p className="text-xs text-slate-500">{intern.company}</p>
-                            </div>
-                          </div>
-                          <Badge variant="outline" className={
-                            intern.status === "NEW"    ? "text-blue-700 bg-blue-50 border-blue-200" :
-                            intern.status === "OPEN"   ? "text-emerald-700 bg-emerald-50 border-emerald-200" :
-                                                         "text-slate-500 bg-slate-100 border-slate-200"
-                          }>
-                            {intern.status}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center justify-between mt-3">
-                          <span className="text-xs font-semibold text-slate-700">{intern.salary}</span>
-                          <Button size="sm" variant="outline" className="h-7 text-xs">Apply</Button>
-                        </div>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
                 )}
               </div>
             </div>

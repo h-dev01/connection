@@ -1917,6 +1917,39 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                     </button>
                   </div>
                 </div>
+                {/* Menu Photos */}
+                <div>
+                  <label className="text-sm font-semibold text-slate-700 block mb-2">Menu Photos <span className="text-slate-400 font-normal">(students can view these)</span></label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {(Array.isArray(meta.menuPhotos) ? meta.menuPhotos as string[] : []).map((src: string, i: number) => (
+                      <div key={i} className="relative h-20 w-20 rounded-lg overflow-hidden border border-slate-200 group">
+                        <img src={src} alt={`menu-${i}`} className="w-full h-full object-cover" />
+                        <button type="button"
+                          onClick={() => setMeta({ menuPhotos: (Array.isArray(meta.menuPhotos) ? meta.menuPhotos as string[] : []).filter((_: string, idx: number) => idx !== i) })}
+                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <label className="h-20 w-20 rounded-lg border-2 border-dashed border-slate-300 hover:border-orange-400 hover:bg-orange-50 flex flex-col items-center justify-center cursor-pointer transition-colors">
+                      <Upload className="h-5 w-5 text-slate-400" />
+                      <span className="text-[10px] text-slate-400 mt-1">Add Photo</span>
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = evt => {
+                            const dataUrl = evt.target?.result as string;
+                            const existing = Array.isArray(meta.menuPhotos) ? meta.menuPhotos as string[] : [];
+                            setMeta({ menuPhotos: [...existing, dataUrl] });
+                          };
+                          reader.readAsDataURL(file);
+                          e.target.value = "";
+                        }} />
+                    </label>
+                  </div>
+                </div>
               </div>
             )}
 
