@@ -67,7 +67,7 @@ export function BannerCarousel({
   };
 
   return (
-    <div className="relative mb-8 rounded-2xl overflow-hidden shadow-lg aspect-[3/1] max-h-64 bg-slate-900">
+    <div className="relative mb-8 rounded-none overflow-hidden shadow-lg h-56 bg-slate-900">
       <AnimatePresence mode="wait">
         <motion.button
           key={b.id}
