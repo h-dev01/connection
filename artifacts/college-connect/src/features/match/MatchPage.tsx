@@ -82,6 +82,8 @@ interface Meetup {
   purpose: LookingFor;
   availableDays: string[];
   preferredTimeSlot: string;
+  editCount: number;        // how many edit-requests have been made
+  editRequestBy?: "me" | "them"; // who sent the latest edit request
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -588,7 +590,145 @@ function BreakdownBar({ label, score, max, color }: { label: string; score: numb
 }
 
 /* ══════════════════════════════════════════════════════════
-   DISCOVER TAB
+   DISCOVER CARD (compact grid card)
+══════════════════════════════════════════════════════════ */
+function DiscoverCard({
+  candidate, compat, filterLF, onDecide, onViewProfile, onMeetup,
+}: {
+  candidate: Candidate;
+  compat: CompatBreakdown;
+  filterLF: LookingFor | "All";
+  onDecide: (d: "liked" | "passed") => void;
+  onViewProfile: () => void;
+  onMeetup: () => void;
+}) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [decided, setDecided] = useState<"liked" | "passed" | null>(null);
+
+  const LF_COLORS: Record<string, string> = {
+    "All": "bg-slate-900 text-white",
+    "Friendship": "bg-violet-100 text-violet-700",
+    "Study Partner": "bg-blue-100 text-blue-700",
+    "Relationship": "bg-rose-100 text-rose-700",
+  };
+
+  const decide = (d: "liked" | "passed") => {
+    setDecided(d);
+    setTimeout(() => onDecide(d), 300);
+  };
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: decided ? 0 : 1, scale: decided ? 0.92 : 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+
+      {/* Color banner */}
+      <div className={cn("h-16 relative flex-none", candidate.color)}>
+        <div className="absolute inset-0 opacity-20 flex items-center justify-center">
+          <Sparkles className="h-10 w-10 text-white" />
+        </div>
+        {candidate.verified && (
+          <span className="absolute top-2 left-2 bg-white/90 text-blue-600 text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+            <Shield className="h-2 w-2" /> Verified
+          </span>
+        )}
+        <span className="absolute top-2 right-2 bg-white/90 text-slate-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">{candidate.college}</span>
+
+        {/* Avatar */}
+        <div className="absolute -bottom-5 left-3">
+          <div className={cn("w-11 h-11 rounded-xl border-2 border-white flex items-center justify-center text-white font-bold text-sm shadow", candidate.color)}>
+            {candidate.initials}
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="px-3 pt-7 pb-3 flex flex-col gap-2 flex-1">
+        <div>
+          <h3 className="font-extrabold text-slate-900 text-sm leading-tight">{candidate.name}, {candidate.age}</h3>
+          <p className="text-[10px] text-slate-500 leading-tight mt-0.5">{candidate.dept} · {candidate.year}</p>
+        </div>
+
+        {/* Score row */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-bold text-slate-500">Match</span>
+              {compat.profileComplete
+                ? <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1 py-0.5 rounded-full">Live</span>
+                : <span className="text-[9px] bg-slate-100 text-slate-500 font-bold px-1 py-0.5 rounded-full">Default</span>
+              }
+            </div>
+            <button onClick={() => setShowBreakdown(p => !p)}
+              className="text-[9px] text-blue-500 hover:text-blue-700 font-bold flex items-center gap-0.5">
+              {showBreakdown ? "▲" : "Why?"}
+            </button>
+          </div>
+          <CompatBar score={compat.score} />
+        </div>
+
+        {/* Breakdown panel */}
+        <AnimatePresence>
+          {showBreakdown && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden">
+              <div className="bg-slate-50 rounded-xl p-2.5 space-y-1 border border-slate-100">
+                <BreakdownBar label="Interests"   score={compat.interests}   max={28} color="bg-blue-500" />
+                <BreakdownBar label="Looking for" score={compat.lookingFor}  max={20} color="bg-violet-500" />
+                <BreakdownBar label="Personality" score={compat.personality} max={15} color="bg-emerald-500" />
+                <BreakdownBar label="Hobbies"     score={compat.hobbies}     max={12} color="bg-amber-500" />
+                <BreakdownBar label="Study"       score={compat.studyStyle}  max={10} color="bg-pink-500" />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Interest chips */}
+        <div className="flex flex-wrap gap-1">
+          {[...candidate.interests, ...candidate.hobbies].slice(0, 4).map(i => {
+            const isShared = compat.sharedInterests.includes(i) || compat.sharedHobbies.includes(i);
+            return (
+              <span key={i} className={cn("px-2 py-0.5 rounded-full text-[9px] font-medium",
+                isShared ? "bg-blue-100 text-blue-700 font-bold" : "bg-slate-100 text-slate-500")}>
+                {isShared && "✓"}{i}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* LookingFor badges */}
+        <div className="flex flex-wrap gap-1">
+          {candidate.lookingFor.map(lf => (
+            <span key={lf} className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full", LF_COLORS[lf])}>{lf}</span>
+          ))}
+        </div>
+
+        <button onClick={onViewProfile}
+          className="text-[10px] text-blue-600 font-semibold hover:underline flex items-center gap-0.5 mt-auto">
+          Full profile <ChevronRight className="h-2.5 w-2.5" />
+        </button>
+      </div>
+
+      {/* Action buttons */}
+      <div className="px-3 pb-3 flex gap-2">
+        <button onClick={() => decide("passed")}
+          className="flex-1 h-9 rounded-xl border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center gap-1 text-xs font-semibold">
+          <X className="h-3.5 w-3.5" /> Pass
+        </button>
+        <button onClick={() => decide("liked")}
+          className="flex-1 h-9 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center justify-center gap-1 text-xs font-bold shadow">
+          <Heart className="h-3.5 w-3.5" /> Connect
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   DISCOVER TAB — grid of all candidates
 ══════════════════════════════════════════════════════════ */
 function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: LookingFor) => void; notify: (m: string, t?: "success"|"warn") => void }) {
   const [decisions, setDecisions] = useState<Record<string, "liked"|"passed">>({});
@@ -596,24 +736,20 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
   const [matchDialog, setMatchDialog] = useState<Candidate | null>(null);
   const [filterLF, setFilterLF] = useState<LookingFor | "All">("All");
   const [meetupOpen, setMeetupOpen] = useState<Candidate | null>(null);
-  const [showBreakdown, setShowBreakdown] = useState(false);
   const [myProfile, setMyProfile] = useState<MatchProfile | null>(loadMatchProfile);
 
-  // Re-read profile whenever tab becomes active
   useEffect(() => {
     const refresh = () => setMyProfile(loadMatchProfile());
     window.addEventListener("storage", refresh);
     return () => window.removeEventListener("storage", refresh);
   }, []);
 
-  // Compute live scores for every candidate
   const scoredPool = CANDIDATES
     .filter(c => !decisions[c.id] && (filterLF === "All" || c.lookingFor.includes(filterLF as LookingFor)))
     .map(c => ({ ...c, liveCompat: calculateCompatibility(myProfile, c) }))
     .sort((a, b) => b.liveCompat.score - a.liveCompat.score);
 
-  const current = scoredPool[0] ?? null;
-  const currentCompat = current?.liveCompat ?? null;
+  const profileComplete = scoredPool[0]?.liveCompat?.profileComplete ?? false;
 
   const decide = (c: Candidate, d: "liked" | "passed") => {
     setDecisions(prev => ({ ...prev, [c.id]: d }));
@@ -621,7 +757,9 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
       onConnect(c, filterLF === "All" ? c.lookingFor[0] : filterLF as LookingFor);
       if (Math.random() > 0.4) setTimeout(() => setMatchDialog(c), 350);
       else notify(`Connect request sent to ${c.name}!`);
-    } else { notify(`Passed on ${c.name}.`, "warn"); }
+    } else {
+      notify(`Passed on ${c.name}.`, "warn");
+    }
   };
 
   const LOOKING_FOR_OPTIONS: (LookingFor | "All")[] = ["All", "Friendship", "Study Partner", "Relationship"];
@@ -629,214 +767,72 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
 
   return (
     <div className="space-y-5">
-      {/* Profile-completeness nudge */}
-      {myProfile && !currentCompat?.profileComplete && (
+      {/* Profile nudge / live score banner */}
+      {!profileComplete ? (
         <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
           <Zap className="h-4 w-4 text-amber-500 flex-none" />
           <p className="text-xs text-amber-700 font-semibold flex-1">
-            Fill in <strong>My Profile</strong> to get a real compatibility score based on your interests, personality & goals.
+            Fill in <strong>My Profile</strong> for a real compatibility score based on your interests & personality.
           </p>
-          <span className="text-[10px] bg-amber-200 text-amber-800 font-bold px-2 py-0.5 rounded-full">Using defaults</span>
+          <span className="text-[10px] bg-amber-200 text-amber-800 font-bold px-2 py-0.5 rounded-full flex-none">Using defaults</span>
         </motion.div>
-      )}
-      {currentCompat?.profileComplete && (
+      ) : (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
           className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 flex-none" />
-          <p className="text-xs text-emerald-700 font-semibold">Scores calculated from <strong>your profile</strong> — sorted by best match first.</p>
+          <p className="text-xs text-emerald-700 font-semibold">Live scores from your profile — sorted best match first.</p>
         </motion.div>
       )}
 
-      {/* Looking-for filter */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Showing:</span>
-        {LOOKING_FOR_OPTIONS.map(o => (
-          <button key={o} onClick={() => { setFilterLF(o); setDecisions({}); }}
-            className={cn("px-3.5 py-1.5 rounded-full text-xs font-bold border-2 transition-all",
-              filterLF === o ? LF_COLORS[o] + " border-transparent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}>
-            {o}
-          </button>
-        ))}
+      {/* Filters + count */}
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-2 flex-wrap items-center">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Showing:</span>
+          {LOOKING_FOR_OPTIONS.map(o => (
+            <button key={o} onClick={() => { setFilterLF(o); setDecisions({}); }}
+              className={cn("px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all",
+                filterLF === o ? LF_COLORS[o] + " border-transparent" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}>
+              {o}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 font-semibold">{scoredPool.length} student{scoredPool.length !== 1 ? "s" : ""}</span>
+          {Object.keys(decisions).length > 0 && (
+            <button onClick={() => setDecisions({})}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-semibold border border-blue-200 rounded-full px-2.5 py-1 hover:bg-blue-50">
+              <RefreshCw className="h-3 w-3" /> Reset
+            </button>
+          )}
+        </div>
       </div>
 
-      {current ? (
-        <div className="flex gap-6 items-start">
-          {/* Card stack */}
-          <div className="flex-1 max-w-sm">
-            {scoredPool[1] && <div className="w-full h-4 bg-white rounded-3xl border border-slate-100 shadow-sm mx-auto scale-95 -mb-4 opacity-50" />}
-            {scoredPool[2] && <div className="w-full h-4 bg-white rounded-3xl border border-slate-100 shadow-sm mx-auto scale-90 -mb-4 opacity-30" />}
-            <AnimatePresence mode="wait">
-              <motion.div key={current.id}
-                initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.92, x: -30 }} transition={{ duration: 0.25 }}
-                className="bg-white rounded-3xl border border-slate-100 shadow-lg overflow-hidden relative">
-                {/* Top banner */}
-                <div className={cn("h-28 relative", current.color)}>
-                  <div className="absolute inset-0 opacity-20 flex items-center justify-center">
-                    <Sparkles className="h-20 w-20 text-white" />
-                  </div>
-                  {current.verified && (
-                    <span className="absolute top-3 left-3 bg-white/90 text-blue-600 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Shield className="h-2.5 w-2.5" /> Verified
-                    </span>
-                  )}
-                  <span className="absolute top-3 right-3 bg-white/90 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{current.college}</span>
-                </div>
-                {/* Avatar */}
-                <div className="absolute top-[68px] left-4">
-                  <div className={cn("w-16 h-16 rounded-2xl border-4 border-white flex items-center justify-center text-white font-bold text-xl shadow-md", current.color)}>
-                    {current.initials}
-                  </div>
-                </div>
-
-                <div className="px-5 pt-10 pb-4 space-y-3">
-                  <div>
-                    <h3 className="text-lg font-extrabold text-slate-900">{current.name}, {current.age}</h3>
-                    <p className="text-xs text-slate-500">{current.dept} · {current.year} · {current.zodiac}</p>
-                  </div>
-
-                  {/* Live Match Score */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-slate-600">Match Score</span>
-                        {currentCompat?.profileComplete
-                          ? <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">Live</span>
-                          : <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-full">Default</span>
-                        }
-                      </div>
-                      <button onClick={() => setShowBreakdown(p => !p)}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold flex items-center gap-0.5">
-                        {showBreakdown ? "Hide" : "Why?"} <ChevronRight className={cn("h-3 w-3 transition-transform", showBreakdown && "rotate-90")} />
-                      </button>
-                    </div>
-                    <CompatBar score={currentCompat?.score ?? current.compatibility} />
-                  </div>
-
-                  {/* Score breakdown panel */}
-                  <AnimatePresence>
-                    {showBreakdown && currentCompat && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden">
-                        <div className="bg-slate-50 rounded-2xl p-3 space-y-1.5 border border-slate-100">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Score breakdown</p>
-                          <BreakdownBar label="Interests"   score={currentCompat.interests}   max={28} color="bg-blue-500" />
-                          <BreakdownBar label="Looking for" score={currentCompat.lookingFor}  max={20} color="bg-violet-500" />
-                          <BreakdownBar label="Personality" score={currentCompat.personality} max={15} color="bg-emerald-500" />
-                          <BreakdownBar label="Hobbies"     score={currentCompat.hobbies}     max={12} color="bg-amber-500" />
-                          <BreakdownBar label="Study style" score={currentCompat.studyStyle}  max={10} color="bg-pink-500" />
-                          <BreakdownBar label="Music"       score={currentCompat.music}       max={8}  color="bg-rose-400" />
-                          <BreakdownBar label="Sports"      score={currentCompat.sports}      max={7}  color="bg-orange-400" />
-                          {currentCompat.sharedInterests.length > 0 && (
-                            <div className="pt-1.5 border-t border-slate-200 mt-1">
-                              <p className="text-[10px] text-slate-400 mb-1">Shared interests:</p>
-                              <div className="flex flex-wrap gap-1">
-                                {currentCompat.sharedInterests.map(i => (
-                                  <span key={i} className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{i}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <p className="text-sm text-slate-600 leading-relaxed line-clamp-2">{current.bio}</p>
-
-                  {/* Interest chips — highlight shared ones */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {[...current.interests, ...current.hobbies].slice(0, 6).map(i => {
-                      const isShared = currentCompat?.sharedInterests.includes(i) || currentCompat?.sharedHobbies.includes(i);
-                      return (
-                        <span key={i} className={cn("px-2.5 py-1 rounded-full text-xs font-medium",
-                          isShared ? "bg-blue-100 text-blue-700 font-bold" : "bg-slate-100 text-slate-600")}>
-                          {isShared && "✓ "}{i}
-                        </span>
-                      );
-                    })}
-                  </div>
-
-                  {/* Looking for */}
-                  <div className="flex gap-1.5 flex-wrap">
-                    {current.lookingFor.map(lf => (
-                      <span key={lf} className={cn("text-[10px] font-bold px-2 py-1 rounded-full", LF_COLORS[lf])}>{lf}</span>
-                    ))}
-                  </div>
-
-                  <button onClick={() => setProfileOpen(current)}
-                    className="text-xs text-blue-600 font-semibold hover:underline flex items-center gap-1">
-                    View full profile <ChevronRight className="h-3 w-3" />
-                  </button>
-                </div>
-
-                {/* Actions */}
-                <div className="px-4 pb-5 flex gap-3">
-                  <button onClick={() => decide(current, "passed")}
-                    className="flex-1 h-12 rounded-2xl border-2 border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center gap-2 font-semibold">
-                    <X className="h-5 w-5" /> Pass
-                  </button>
-                  <button onClick={() => decide(current, "liked")}
-                    className="flex-1 h-12 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white transition-all flex items-center justify-center gap-2 font-bold shadow-md">
-                    <Heart className="h-5 w-5" /> Connect
-                  </button>
-                </div>
-              </motion.div>
-            </AnimatePresence>
-          </div>
-
-          {/* Side panel */}
-          <div className="hidden lg:block w-56 space-y-4 pt-2 flex-none">
-            <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4 text-center">
-              <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">In pool</p>
-              <p className="text-4xl font-extrabold text-blue-700">{scoredPool.length}</p>
-              <p className="text-xs text-blue-500 mt-0.5">sorted by best match</p>
-            </div>
-
-            {/* Top-3 quick preview */}
-            {scoredPool.slice(1, 4).length > 0 && (
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3 space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Up next</p>
-                {scoredPool.slice(1, 4).map(c => (
-                  <div key={c.id} className="flex items-center gap-2">
-                    <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold flex-none", c.color)}>{c.initials}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-800 truncate">{c.name}</p>
-                      <div className="w-full h-1 bg-slate-100 rounded-full mt-0.5 overflow-hidden">
-                        <div className={cn("h-full rounded-full", c.liveCompat.score >= 75 ? "bg-emerald-500" : "bg-blue-400")}
-                          style={{ width: `${c.liveCompat.score}%` }} />
-                      </div>
-                    </div>
-                    <span className={cn("text-[10px] font-extrabold", c.liveCompat.score >= 75 ? "text-emerald-600" : "text-blue-500")}>{c.liveCompat.score}%</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
-              {[
-                { icon: Shield, text: "Verified .edu emails only" },
-                { icon: Zap,    text: "Score = interests + personality + goals" },
-                { icon: CheckCircle2, text: "Mutual consent required" },
-                { icon: MapPin, text: "Campus-approved meetups" },
-              ].map(({ icon: Icon, text }) => (
-                <div key={text} className="flex items-start gap-2">
-                  <Icon className="h-3.5 w-3.5 text-blue-500 flex-none mt-0.5" />
-                  <p className="text-xs text-slate-500 leading-snug">{text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Grid */}
+      {scoredPool.length > 0 ? (
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <AnimatePresence>
+            {scoredPool.map(c => (
+              <DiscoverCard
+                key={c.id}
+                candidate={c}
+                compat={c.liveCompat}
+                filterLF={filterLF}
+                onDecide={d => decide(c, d)}
+                onViewProfile={() => setProfileOpen(c)}
+                onMeetup={() => setMeetupOpen(c)}
+              />
+            ))}
+          </AnimatePresence>
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-24 text-center">
           <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-            <RefreshCw className="h-8 w-8 text-slate-400" />
+            <CheckCircle2 className="h-8 w-8 text-slate-400" />
           </div>
-          <h3 className="font-bold text-slate-800 text-lg mb-1">You've seen everyone!</h3>
-          <p className="text-slate-500 text-sm mb-6 max-w-xs">New profiles join daily. Try a different filter or reset.</p>
-          <Button variant="outline" onClick={() => setDecisions({})}><RefreshCw className="h-4 w-4 mr-2" />Reset Deck</Button>
+          <h3 className="font-bold text-slate-800 text-lg mb-1">All done!</h3>
+          <p className="text-slate-500 text-sm mb-6 max-w-xs">You've reviewed everyone. New profiles join daily.</p>
+          <Button variant="outline" onClick={() => setDecisions({})}><RefreshCw className="h-4 w-4 mr-2" />Reset</Button>
         </div>
       )}
 
@@ -1090,20 +1086,70 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
 ══════════════════════════════════════════════════════════ */
 function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => void }) {
   const [meetups, setMeetups] = useState<Meetup[]>([
-    { id: "mu1", withName: "Riya Sharma", withId: "c1", type: "Study Session", date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room A", notes: "Bring DS notes", status: "confirmed", proposedBy: "me", purpose: "Study Partner", availableDays: ["Monday","Wednesday","Friday"], preferredTimeSlot: "Afternoon (12pm–4pm)" },
-    { id: "mu2", withName: "Sneha Nair", withId: "c3", type: "Coffee Chat", date: "This Saturday", time: "11:00 AM", location: "Central Cafeteria", notes: "", status: "pending", proposedBy: "them", purpose: "Friendship", availableDays: ["Saturday","Sunday"], preferredTimeSlot: "Morning (8am–12pm)" },
-    { id: "mu3", withName: "Arjun Patel", withId: "c2", type: "Campus Walk", date: "Next Monday", time: "5:00 PM", location: "Central Garden", notes: "Around the lake trail", status: "pending", proposedBy: "me", purpose: "Friendship", availableDays: ["Monday","Thursday","Sunday"], preferredTimeSlot: "Evening (4pm–8pm)" },
+    { id: "mu1", withName: "Riya Sharma", withId: "c1", type: "Study Session", date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room A", notes: "Bring DS notes", status: "confirmed", proposedBy: "me", purpose: "Study Partner", availableDays: ["Monday","Wednesday","Friday"], preferredTimeSlot: "Afternoon (12pm–4pm)", editCount: 0 },
+    { id: "mu2", withName: "Sneha Nair", withId: "c3", type: "Coffee Chat", date: "This Saturday", time: "11:00 AM", location: "Central Cafeteria", notes: "", status: "pending", proposedBy: "them", purpose: "Friendship", availableDays: ["Saturday","Sunday"], preferredTimeSlot: "Morning (8am–12pm)", editCount: 2, editRequestBy: "them" },
+    { id: "mu3", withName: "Arjun Patel", withId: "c2", type: "Campus Walk", date: "Next Monday", time: "5:00 PM", location: "Central Garden", notes: "Around the lake trail", status: "pending", proposedBy: "me", purpose: "Friendship", availableDays: ["Monday","Thursday","Sunday"], preferredTimeSlot: "Evening (4pm–8pm)", editCount: 1, editRequestBy: "me" },
   ]);
 
-  const accept = (id: string) => { setMeetups(p => p.map(m => m.id === id ? { ...m, status: "confirmed" } : m)); notify("Meetup confirmed! 🎉"); };
-  const decline = (id: string) => { setMeetups(p => p.map(m => m.id === id ? { ...m, status: "cancelled" } : m)); notify("Meetup declined.", "warn"); };
-  const complete = (id: string) => { setMeetups(p => p.map(m => m.id === id ? { ...m, status: "completed" } : m)); notify("Marked as completed! ⭐"); };
+  const MAX_EDITS = 3;
+
+  const accept = (id: string) => {
+    setMeetups(p => p.map(m => m.id === id ? { ...m, status: "confirmed", editRequestBy: undefined } : m));
+    notify("Meetup confirmed! 🎉");
+  };
+  const decline = (id: string) => {
+    setMeetups(p => p.map(m => m.id === id ? { ...m, status: "cancelled" } : m));
+    notify("Meetup declined.", "warn");
+  };
+  const complete = (id: string) => {
+    setMeetups(p => p.map(m => m.id === id ? { ...m, status: "completed" } : m));
+    notify("Marked as completed! ⭐");
+  };
+
+  // Request an edit — increments editCount; auto-declines if limit exceeded
+  const requestEdit = (id: string) => {
+    setMeetups(p => p.map(m => {
+      if (m.id !== id) return m;
+      const next = m.editCount + 1;
+      if (next > MAX_EDITS) {
+        notify(`Edit limit reached — meetup with ${m.withName} auto-declined.`, "warn");
+        return { ...m, status: "cancelled", editCount: next };
+      }
+      if (next === MAX_EDITS) {
+        notify(`⚠️ Last allowed edit sent to ${m.withName}. If declined again, meetup will be cancelled.`, "warn");
+      } else {
+        notify(`Edit request sent to ${m.withName}. (${next}/${MAX_EDITS} edits used)`);
+      }
+      return { ...m, editCount: next, editRequestBy: "me", status: "pending" };
+    }));
+  };
+
+  // Respond to an edit request from them
+  const acceptEdit = (id: string) => {
+    setMeetups(p => p.map(m => m.id === id ? { ...m, status: "confirmed", editRequestBy: undefined } : m));
+    notify("Edit accepted — meetup confirmed! ✅");
+  };
+  const declineEdit = (id: string) => {
+    setMeetups(p => p.map(m => {
+      if (m.id !== id) return m;
+      const next = m.editCount + 1;
+      if (next > MAX_EDITS) {
+        notify(`Max edits exceeded — meetup with ${m.withName} cancelled.`, "warn");
+        return { ...m, status: "cancelled", editCount: next };
+      }
+      notify(`Edit declined. ${m.withName} has ${MAX_EDITS - next} edit request(s) remaining.`, "warn");
+      return { ...m, editCount: next, editRequestBy: undefined, status: "pending" };
+    }));
+  };
 
   const STATUS_STYLE: Record<MeetupStatus, string> = {
-    pending:   "bg-amber-50 border-amber-200 text-amber-700",
-    confirmed: "bg-emerald-50 border-emerald-200 text-emerald-700",
-    completed: "bg-slate-100 border-slate-200 text-slate-500",
-    cancelled: "bg-red-50 border-red-200 text-red-600",
+    pending:   "bg-amber-50 border-amber-200",
+    confirmed: "bg-emerald-50 border-emerald-200",
+    completed: "bg-slate-100 border-slate-200",
+    cancelled: "bg-red-50 border-red-200",
+  };
+  const STATUS_LABEL_STYLE: Record<MeetupStatus, string> = {
+    pending: "text-amber-700", confirmed: "text-emerald-700", completed: "text-slate-500", cancelled: "text-red-600",
   };
   const STATUS_ICON: Record<MeetupStatus, React.FC<{ className?: string }>> = {
     pending: Clock, confirmed: CheckCircle2, completed: Star, cancelled: X,
@@ -1113,58 +1159,145 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-extrabold text-slate-900">My Meetups</h2>
-        <div className="flex gap-2 text-xs">
-          {(["pending","confirmed","completed","cancelled"] as MeetupStatus[]).map(s => (
-            <span key={s} className={cn("px-2 py-1 rounded-full border font-bold capitalize", STATUS_STYLE[s])}>
-              {meetups.filter(m => m.status === s).length} {s}
-            </span>
-          ))}
+        <div className="flex gap-2 text-xs flex-wrap justify-end">
+          {(["pending","confirmed","completed","cancelled"] as MeetupStatus[]).map(s => {
+            const cnt = meetups.filter(m => m.status === s).length;
+            return cnt > 0 ? (
+              <span key={s} className={cn("px-2.5 py-1 rounded-full border font-bold capitalize", STATUS_STYLE[s], STATUS_LABEL_STYLE[s])}>
+                {cnt} {s}
+              </span>
+            ) : null;
+          })}
         </div>
       </div>
+
       {meetups.map(m => {
         const Icon = MEETUP_ICONS[m.type];
         const SIcon = STATUS_ICON[m.status];
+        const editsLeft = MAX_EDITS - m.editCount;
+        const editLimitReached = m.editCount >= MAX_EDITS;
+        const hasIncomingEdit = m.editRequestBy === "them" && m.status === "pending";
+        const hasSentEdit = m.editRequestBy === "me" && m.status === "pending";
+
         return (
           <motion.div key={m.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className={cn("bg-white rounded-2xl border-2 shadow-sm p-5 space-y-3", STATUS_STYLE[m.status])}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center shadow-sm">
-                  <Icon className="h-5 w-5 text-slate-600" />
+            className={cn("bg-white rounded-2xl border-2 shadow-sm overflow-hidden", STATUS_STYLE[m.status])}>
+
+            {/* Edit limit warning banner */}
+            {editLimitReached && m.status !== "cancelled" && (
+              <div className="bg-red-100 border-b border-red-200 px-4 py-2 flex items-center gap-2">
+                <Ban className="h-3.5 w-3.5 text-red-600 flex-none" />
+                <p className="text-xs font-bold text-red-700">Edit limit reached — no more changes allowed. Accept or decline as-is.</p>
+              </div>
+            )}
+            {!editLimitReached && m.editCount > 0 && (
+              <div className={cn("border-b px-4 py-2 flex items-center gap-2",
+                editsLeft === 1 ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-100")}>
+                <Pencil className={cn("h-3 w-3 flex-none", editsLeft === 1 ? "text-red-500" : "text-amber-500")} />
+                <p className={cn("text-xs font-semibold", editsLeft === 1 ? "text-red-600" : "text-amber-700")}>
+                  {m.editCount}/{MAX_EDITS} edits used — {editsLeft} remaining.
+                  {editsLeft === 1 && " ⚠️ Next edit will be the last!"}
+                </p>
+              </div>
+            )}
+
+            <div className="p-5 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-xl border border-slate-200 flex items-center justify-center shadow-sm flex-none">
+                    <Icon className="h-5 w-5 text-slate-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900">{m.type} <span className="text-slate-500 font-normal">with</span> {m.withName}</h4>
+                    <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                      <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{m.date}</span>
+                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{m.time}</span>
+                      <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{m.location}</span>
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-slate-900">{m.type} <span className="text-slate-500 font-normal">with</span> {m.withName}</h4>
-                  <p className="text-xs text-slate-500 flex items-center gap-3 mt-0.5">
-                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{m.date}</span>
-                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{m.time}</span>
-                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{m.location}</span>
+                <span className={cn("flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border flex-none", STATUS_STYLE[m.status], STATUS_LABEL_STYLE[m.status])}>
+                  <SIcon className="h-3 w-3" />
+                  {m.status.charAt(0).toUpperCase() + m.status.slice(1)}
+                </span>
+              </div>
+
+              {m.notes && <p className="text-xs text-slate-600 bg-white/70 px-3 py-2 rounded-xl border border-slate-100">📝 {m.notes}</p>}
+
+              {/* Incoming edit request from them */}
+              {hasIncomingEdit && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 space-y-2">
+                  <p className="text-xs font-bold text-blue-700 flex items-center gap-1.5">
+                    <Pencil className="h-3 w-3" /> {m.withName} wants to reschedule
+                    <span className="ml-auto text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded-full">{m.editCount}/{MAX_EDITS} edits</span>
                   </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs font-bold" onClick={() => acceptEdit(m.id)}>
+                      <Check className="h-3 w-3 mr-1" /> Accept Changes
+                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 h-8 border-red-200 text-red-600 hover:bg-red-50 text-xs" onClick={() => declineEdit(m.id)}>
+                      <X className="h-3 w-3 mr-1" /> Decline Edit
+                    </Button>
+                  </div>
                 </div>
-              </div>
-              <span className={cn("flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full border", STATUS_STYLE[m.status])}>
-                <SIcon className="h-3 w-3" />
-                {m.status.charAt(0).toUpperCase() + m.status.slice(1)}
-              </span>
+              )}
+
+              {/* New proposal from them (not an edit) */}
+              {m.proposedBy === "them" && m.status === "pending" && !hasIncomingEdit && (
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1 h-9 bg-emerald-600 hover:bg-emerald-700 font-bold text-xs" onClick={() => accept(m.id)}>
+                    <Check className="h-3.5 w-3.5 mr-1" /> Accept
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 h-9 border-red-200 text-red-600 hover:bg-red-50 text-xs" onClick={() => decline(m.id)}>
+                    <X className="h-3.5 w-3.5 mr-1" /> Decline
+                  </Button>
+                </div>
+              )}
+
+              {/* Waiting for them */}
+              {hasSentEdit && (
+                <p className="text-xs text-blue-600 font-semibold flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" /> Edit request sent — waiting for {m.withName}…
+                  <span className="ml-auto text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{m.editCount}/{MAX_EDITS}</span>
+                </p>
+              )}
+              {m.proposedBy === "me" && m.status === "pending" && !hasSentEdit && (
+                <p className="text-xs text-amber-600 font-semibold flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" /> Waiting for {m.withName} to respond…
+                </p>
+              )}
+
+              {/* Confirmed actions */}
+              {m.status === "confirmed" && (
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" variant="outline" className="h-9 border-slate-200 text-slate-600 text-xs font-bold" onClick={() => complete(m.id)}>
+                    <Star className="h-3.5 w-3.5 mr-1" /> Mark Completed
+                  </Button>
+                  {!editLimitReached && (
+                    <Button size="sm" variant="outline"
+                      className={cn("h-9 text-xs font-bold", editsLeft === 1
+                        ? "border-red-200 text-red-600 hover:bg-red-50"
+                        : "border-blue-200 text-blue-600 hover:bg-blue-50")}
+                      onClick={() => requestEdit(m.id)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1" />
+                      Request Edit {m.editCount > 0 ? `(${editsLeft} left)` : ""}
+                    </Button>
+                  )}
+                  {editLimitReached && (
+                    <span className="text-[10px] text-red-500 font-bold flex items-center gap-1 px-2">
+                      <Ban className="h-3 w-3" /> No more edits allowed
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {m.status === "cancelled" && (
+                <p className="text-xs text-red-500 font-semibold flex items-center gap-1.5">
+                  <Ban className="h-3 w-3" />
+                  {m.editCount >= MAX_EDITS ? "Auto-cancelled: edit limit (3/3) reached." : "This meetup was declined."}
+                </p>
+              )}
             </div>
-            {m.notes && <p className="text-xs text-slate-600 bg-white/70 px-3 py-2 rounded-xl">📝 {m.notes}</p>}
-            {m.proposedBy === "them" && m.status === "pending" && (
-              <div className="flex gap-2">
-                <Button size="sm" className="flex-1 h-9 bg-emerald-600 hover:bg-emerald-700 font-bold" onClick={() => accept(m.id)}>
-                  <Check className="h-3.5 w-3.5 mr-1" /> Accept
-                </Button>
-                <Button size="sm" variant="outline" className="flex-1 h-9 border-red-200 text-red-600 hover:bg-red-50" onClick={() => decline(m.id)}>
-                  <X className="h-3.5 w-3.5 mr-1" /> Decline
-                </Button>
-              </div>
-            )}
-            {m.proposedBy === "me" && m.status === "pending" && (
-              <p className="text-xs text-amber-600 font-semibold">⏳ Waiting for {m.withName} to respond…</p>
-            )}
-            {m.status === "confirmed" && (
-              <Button size="sm" variant="outline" className="h-9 border-slate-200 text-slate-600 text-xs font-bold" onClick={() => complete(m.id)}>
-                <Star className="h-3.5 w-3.5 mr-1" /> Mark as Completed
-              </Button>
-            )}
           </motion.div>
         );
       })}
