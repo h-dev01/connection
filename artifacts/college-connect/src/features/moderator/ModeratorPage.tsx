@@ -1552,6 +1552,23 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
                     </button>
                   </div>
                 </div>
+                {/* Delivery Links */}
+                <div className="space-y-2.5">
+                  <p className="text-xs font-bold text-orange-700 uppercase tracking-wide">Delivery Links</p>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700 block mb-1">Zomato Link</label>
+                    <Input placeholder="https://zomato.com/..." value={(meta.zomatoLink as string) ?? ""} onChange={e => setMeta({ zomatoLink: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700 block mb-1">Swiggy Link</label>
+                    <Input placeholder="https://swiggy.com/..." value={(meta.swiggyLink as string) ?? ""} onChange={e => setMeta({ swiggyLink: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700 block mb-1">Other Delivery Link</label>
+                    <Input placeholder="https://..." value={(meta.otherDeliveryLink as string) ?? ""} onChange={e => setMeta({ otherDeliveryLink: e.target.value })} />
+                  </div>
+                </div>
+
                 {/* Menu Photos */}
                 <div>
                   <label className="text-sm font-semibold text-slate-700 block mb-2">Menu Photos <span className="text-slate-400 font-normal">(students can view these)</span></label>

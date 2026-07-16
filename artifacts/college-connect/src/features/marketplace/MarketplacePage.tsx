@@ -86,6 +86,9 @@ interface Restaurant {
   googleMapsLink: string | null;
   cuisineTypes: string[];
   deliveryAvailable: boolean;
+  zomatoLink: string | null;
+  swiggyLink: string | null;
+  otherDeliveryLink: string | null;
 }
 
 /* ─── Live API types ───────────────────────────────────────── */
@@ -221,6 +224,9 @@ function localListingToRestaurant(l: LocalListingRow): Restaurant {
     address: l.address, contactNumber: l.contactNumber,
     googleMapsLink: l.googleMapsLink, cuisineTypes,
     deliveryAvailable: !!meta.deliveryAvailable,
+    zomatoLink: (meta.zomatoLink as string) || null,
+    swiggyLink: (meta.swiggyLink as string) || null,
+    otherDeliveryLink: (meta.otherDeliveryLink as string) || null,
   };
 }
 
@@ -553,6 +559,32 @@ function ListingDetailModal({ payload, onClose }: { payload: DetailPayload; onCl
                           <ExternalLink className="h-4 w-4 mr-2" />View on Google Maps
                         </Button>
                       </a>
+                    )}
+                    {isRestaurant && (r.zomatoLink || r.swiggyLink || r.otherDeliveryLink) && (
+                      <div className="pt-1 space-y-2">
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Order Online</p>
+                        {r.zomatoLink && (
+                          <a href={r.zomatoLink} target="_blank" rel="noopener noreferrer">
+                            <Button className="w-full bg-red-600 hover:bg-red-700 text-white font-bold">
+                              <ExternalLink className="h-4 w-4 mr-2" />Order on Zomato
+                            </Button>
+                          </a>
+                        )}
+                        {r.swiggyLink && (
+                          <a href={r.swiggyLink} target="_blank" rel="noopener noreferrer">
+                            <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold">
+                              <ExternalLink className="h-4 w-4 mr-2" />Order on Swiggy
+                            </Button>
+                          </a>
+                        )}
+                        {r.otherDeliveryLink && (
+                          <a href={r.otherDeliveryLink} target="_blank" rel="noopener noreferrer">
+                            <Button variant="outline" className="w-full border-slate-200 font-bold">
+                              <ExternalLink className="h-4 w-4 mr-2" />Order Online
+                            </Button>
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}

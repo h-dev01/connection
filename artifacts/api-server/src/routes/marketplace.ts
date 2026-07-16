@@ -2,7 +2,7 @@
  * Marketplace routes — listings for buy/sell, housing, services.
  */
 import { Router, type IRouter } from "express";
-import { eq, and, desc, isNull } from "drizzle-orm";
+import { eq, and, desc, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db, listingsTable, localListingsTable } from "@workspace/db";
 
@@ -71,6 +71,17 @@ const CreateListing = z.object({
 router.post("/marketplace/listings", async (req, res): Promise<void> => {
   const parsed = CreateListing.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  // Roommate rule: one active post per seller — delete any previous roommate listing
+  if (parsed.data.listingType === "roommate" && parsed.data.sellerName) {
+    await db.delete(listingsTable).where(
+      and(
+        eq(listingsTable.listingType, "roommate"),
+        eq(listingsTable.sellerName, parsed.data.sellerName),
+      )
+    );
+  }
+
   const [listing] = await db.insert(listingsTable).values(parsed.data).returning();
   res.status(201).json(listing);
 });
