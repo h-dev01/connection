@@ -1,5 +1,5 @@
 /**
- * Moderator routes — feature toggles, material approval, schedules.
+ * Moderator routes — feature toggles, material approval, listings, banners.
  */
 import { Router, type IRouter } from "express";
 import { eq, and, desc, isNull } from "drizzle-orm";
@@ -9,8 +9,6 @@ import {
   studyMaterialsTable,
   featureRegistryTable,
   featureTogglesTable,
-  examSchedulesTable,
-  classTimetablesTable,
   auditLogTable,
   localListingsTable,
 } from "@workspace/db";
@@ -29,8 +27,7 @@ async function writeAudit(entry: {
 /**
  * Shared "Moderator Filters" bar helpers — Time range (today / last 7 days /
  * last 30 days / custom range) plus College → Course → Semester → Subject
- * scoping, used across Feature Toggles, Study Materials, Exam Schedules and
- * Timetables tabs.
+ * scoping, used across Feature Toggles and Study Materials tabs.
  */
 const toInt = (v: string | undefined) => {
   const n = parseInt(v ?? "", 10);
@@ -292,154 +289,6 @@ router.patch("/moderator/toggles/:featureName", async (req, res): Promise<void> 
 
   res.json(row);
 });
-
-/* ══════════════════════════════════════════════════════════════
-   EXAM SCHEDULES
-══════════════════════════════════════════════════════════════ */
-
-// GET /api/moderator/exam-schedules?course=...&semester=...&collegeId=&courseId=&semesterId=&subjectId=&dateFrom=&dateTo=
-router.get("/moderator/exam-schedules", async (req, res): Promise<void> => {
-  const { course, semester, dateFrom, dateTo } = req.query as Record<string, string>;
-  const collegeId  = toInt(req.query.collegeId  as string);
-  const courseId   = toInt(req.query.courseId   as string);
-  const semesterId = toInt(req.query.semesterId as string);
-  const subjectId  = toInt(req.query.subjectId  as string);
-
-  const conditions = [];
-  if (collegeId)  conditions.push(eq(examSchedulesTable.collegeId,  collegeId));
-  if (courseId)   conditions.push(eq(examSchedulesTable.courseId,   courseId));
-  if (semesterId) conditions.push(eq(examSchedulesTable.semesterId, semesterId));
-  if (subjectId)  conditions.push(eq(examSchedulesTable.subjectId,  subjectId));
-  if (!collegeId && !courseId && course) conditions.push(eq(examSchedulesTable.course, course));
-  if (!semesterId && semester) conditions.push(eq(examSchedulesTable.semester, semester));
-  const dateCond = dateRangeCondition(examSchedulesTable.createdAt, dateFrom, dateTo);
-  if (dateCond) conditions.push(dateCond);
-
-  let query = db.select().from(examSchedulesTable).$dynamic();
-  if (conditions.length > 0) query = query.where(and(...conditions));
-  const rows = await query.orderBy(desc(examSchedulesTable.createdAt));
-  res.json(rows);
-});
-
-const ExamScheduleSchema = z.object({
-  title: z.string().min(1),
-  course: z.string().min(1),
-  semester: z.string().min(1),
-  collegeId: z.number().optional(),
-  courseId: z.number().optional(),
-  semesterId: z.number().optional(),
-  subjectId: z.number().optional(),
-  examSession: z.string().min(1),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
-  fileUrl: z.string().optional(),
-  description: z.string().optional(),
-  uploaderName: z.string().default("Moderator"),
-  uploadedById: z.number().optional(),
-});
-
-// POST /api/moderator/exam-schedules
-router.post("/moderator/exam-schedules", async (req, res): Promise<void> => {
-  const parsed = ExamScheduleSchema.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
-  const [row] = await db.insert(examSchedulesTable).values(parsed.data).returning();
-  await writeAudit({ actorName: parsed.data.uploaderName, actorRole: "low_admin", action: "upload_exam_schedule", entityType: "exam_schedule", entityId: String(row.id), entityLabel: row.title, scope: `${row.course} × ${row.semester}` });
-  res.status(201).json(row);
-});
-
-// PATCH /api/moderator/exam-schedules/:id
-router.patch("/moderator/exam-schedules/:id", async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const parsed = ExamScheduleSchema.partial().safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
-  const [row] = await db.update(examSchedulesTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(examSchedulesTable.id, id)).returning();
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(row);
-});
-
-// DELETE /api/moderator/exam-schedules/:id
-router.delete("/moderator/exam-schedules/:id", async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  await db.delete(examSchedulesTable).where(eq(examSchedulesTable.id, id));
-  res.json({ ok: true });
-});
-
-/* ══════════════════════════════════════════════════════════════
-   CLASS TIMETABLES
-══════════════════════════════════════════════════════════════ */
-
-// GET /api/moderator/timetables?course=...&semester=...&section=...&collegeId=&courseId=&semesterId=&subjectId=&dateFrom=&dateTo=
-router.get("/moderator/timetables", async (req, res): Promise<void> => {
-  const { course, semester, section, dateFrom, dateTo } = req.query as Record<string, string>;
-  const collegeId  = toInt(req.query.collegeId  as string);
-  const courseId   = toInt(req.query.courseId   as string);
-  const semesterId = toInt(req.query.semesterId as string);
-  const subjectId  = toInt(req.query.subjectId  as string);
-
-  const conditions = [];
-  if (collegeId)  conditions.push(eq(classTimetablesTable.collegeId,  collegeId));
-  if (courseId)   conditions.push(eq(classTimetablesTable.courseId,   courseId));
-  if (semesterId) conditions.push(eq(classTimetablesTable.semesterId, semesterId));
-  if (subjectId)  conditions.push(eq(classTimetablesTable.subjectId,  subjectId));
-  if (!collegeId && !courseId && course) conditions.push(eq(classTimetablesTable.course, course));
-  if (!semesterId && semester) conditions.push(eq(classTimetablesTable.semester, semester));
-  if (section) conditions.push(eq(classTimetablesTable.section, section));
-  const dateCond = dateRangeCondition(classTimetablesTable.createdAt, dateFrom, dateTo);
-  if (dateCond) conditions.push(dateCond);
-
-  let query = db.select().from(classTimetablesTable).$dynamic();
-  if (conditions.length > 0) query = query.where(and(...conditions));
-  const rows = await query.orderBy(desc(classTimetablesTable.createdAt));
-  res.json(rows);
-});
-
-const TimetableSchema = z.object({
-  title: z.string().min(1),
-  course: z.string().min(1),
-  semester: z.string().min(1),
-  section: z.string().min(1),
-  collegeId: z.number().optional(),
-  courseId: z.number().optional(),
-  semesterId: z.number().optional(),
-  subjectId: z.number().optional(),
-  effectiveFrom: z.string().optional(),
-  effectiveTo: z.string().optional(),
-  fileUrl: z.string().optional(),
-  description: z.string().optional(),
-  uploaderName: z.string().default("Moderator"),
-  uploadedById: z.number().optional(),
-});
-
-// POST /api/moderator/timetables
-router.post("/moderator/timetables", async (req, res): Promise<void> => {
-  const parsed = TimetableSchema.safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
-  const [row] = await db.insert(classTimetablesTable).values(parsed.data).returning();
-  await writeAudit({ actorName: parsed.data.uploaderName, actorRole: "low_admin", action: "upload_timetable", entityType: "timetable", entityId: String(row.id), entityLabel: row.title, scope: `${row.course} × ${row.semester} × ${row.section}` });
-  res.status(201).json(row);
-});
-
-// PATCH /api/moderator/timetables/:id
-router.patch("/moderator/timetables/:id", async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  const parsed = TimetableSchema.partial().safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message }); return; }
-  const [row] = await db.update(classTimetablesTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(classTimetablesTable.id, id)).returning();
-  if (!row) { res.status(404).json({ error: "Not found" }); return; }
-  res.json(row);
-});
-
-// DELETE /api/moderator/timetables/:id
-router.delete("/moderator/timetables/:id", async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id as string, 10);
-  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
-  await db.delete(classTimetablesTable).where(eq(classTimetablesTable.id, id));
-  res.json({ ok: true });
-});
-
 /* ══════════════════════════════════════════════════════════════
    LOCAL LISTINGS — Housing / Restaurants / Local Services
 ══════════════════════════════════════════════════════════════ */

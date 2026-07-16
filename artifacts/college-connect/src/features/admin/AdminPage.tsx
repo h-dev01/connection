@@ -45,7 +45,6 @@ const DEFAULT_FEATURES = [
   { name: "study_materials", label: "Study Materials", description: "Study material library, browsing and uploads", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
   { name: "ai_summarizer", label: "AI Summarizer", description: "AI-powered document summarizer", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
   { name: "exam_prep_hub", label: "Exam Prep Hub", description: "Past papers and exam preparation tools", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
-  { name: "academic_tools", label: "Academic Tools", description: "Smart timetable and GPA calculator", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
   { name: "career_corner", label: "Career Corner", description: "Internship listings and resume builder", defaultEnabled: true, forcedActive: false, globalEnabled: true, parentName: "study_hub" },
   { name: "campus_match", label: "Campus Match", description: "Peer and roommate matching feature", defaultEnabled: false, forcedActive: false, globalEnabled: false, parentName: null },
 ];
@@ -1195,8 +1194,6 @@ const ACTION_COLORS: Record<string, string> = {
   approve_material: "text-emerald-600 bg-emerald-50",
   reject_material: "text-red-600 bg-red-50",
   toggle_feature: "text-blue-600 bg-blue-50",
-  upload_exam_schedule: "text-violet-600 bg-violet-50",
-  upload_timetable: "text-violet-600 bg-violet-50",
   create_semester: "text-amber-600 bg-amber-50",
   create_moderator: "text-indigo-600 bg-indigo-50",
   update_moderator: "text-indigo-600 bg-indigo-50",
