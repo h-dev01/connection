@@ -1087,8 +1087,10 @@ export default function Marketplace() {
       </header>
 
       <div className="p-8">
-        <BannerCarousel placement="marketplace" collegeId={user?.collegeId}
-          onBannerClick={(linkType) => { const tab = LINK_TYPE_TO_TAB[linkType]; if (tab) setActiveTab(tab); }} />
+        <div className="-mx-8">
+          <BannerCarousel placement="marketplace" collegeId={user?.collegeId}
+            onBannerClick={(linkType) => { const tab = LINK_TYPE_TO_TAB[linkType]; if (tab) setActiveTab(tab); }} />
+        </div>
 
         {/* Sell listing modal */}
         <AnimatePresence>
