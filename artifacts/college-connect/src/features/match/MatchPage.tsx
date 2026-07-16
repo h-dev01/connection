@@ -79,6 +79,9 @@ interface Meetup {
   type: MeetupType; date: string; time: string;
   location: string; notes: string; status: MeetupStatus;
   proposedBy: "me" | "them";
+  purpose: LookingFor;
+  availableDays: string[];
+  preferredTimeSlot: string;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -171,8 +174,9 @@ const SEED_OUTGOING: MatchRequest[] = [
 const SEED_CONNECTED: ConnectedMatch[] = [
   { id: "cm1", candidate: CANDIDATES[0], lookingFor: "Study Partner", connectedOn: "2 days ago",
     meetup: { id: "mu1", withName: "Riya Sharma", withId: "c1", type: "Study Session",
-      date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room 3",
-      notes: "Bring DS notes", status: "confirmed", proposedBy: "me" } },
+      date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room A",
+      notes: "Bring DS notes", status: "confirmed", proposedBy: "me",
+      purpose: "Study Partner", availableDays: ["Monday","Wednesday","Friday"], preferredTimeSlot: "Afternoon (12pm–4pm)" } },
   { id: "cm2", candidate: CANDIDATES[5], lookingFor: "Friendship", connectedOn: "5 days ago" },
 ];
 
@@ -181,9 +185,20 @@ const MEETUP_ICONS: Record<MeetupType, React.FC<{ className?: string }>> = {
   "Coffee Chat": Coffee, "Study Session": Library, "Campus Walk": Leaf,
   "Club/Event Visit": Building2, "Custom": Sparkles,
 };
-const LOCATIONS = ["Cafeteria", "Library — Study Room", "Central Garden", "Student Center", "Lab Block Lobby", "Sports Complex", "Open Air Theatre"];
+const DEFAULT_LOCATIONS = ["Central Cafeteria", "Library — Study Room A", "Central Garden", "Student Activity Center", "Sports Complex Lobby", "Open Air Theatre", "CS Block Atrium"];
 const TIME_SLOTS = ["9:00 AM","10:00 AM","11:00 AM","12:00 PM","1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM"];
 const DATE_OPTIONS = ["Today","Tomorrow","This Saturday","This Sunday","Next Monday","Next Friday"];
+const DAYS_OF_WEEK = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+
+function getCampusLocations(college: string): string[] {
+  try {
+    const raw = localStorage.getItem("cc_campus_locations");
+    if (!raw) return DEFAULT_LOCATIONS;
+    const all: Array<{ college: string; name: string; active: boolean }> = JSON.parse(raw);
+    const filtered = all.filter(l => l.active && l.college === college).map(l => l.name);
+    return filtered.length > 0 ? filtered : DEFAULT_LOCATIONS;
+  } catch { return DEFAULT_LOCATIONS; }
+}
 
 const INTEREST_OPTS = ["Machine Learning", "Web Dev", "App Dev", "UI/UX", "Data Science", "Cybersecurity", "Blockchain", "Open Source", "Game Dev", "Photography", "Graphic Design", "Writing", "Poetry", "Film Making", "Content Creation", "Public Speaking"];
 const HOBBY_OPTS = ["Reading", "Cooking", "Hiking", "Travel", "Journaling", "Coffee brewing", "Podcasts", "Gaming", "Anime", "Gardening", "Painting", "Chess"];
@@ -234,27 +249,65 @@ function Toast({ msg, type }: { msg: string; type: "success" | "warn" }) {
 /* ══════════════════════════════════════════════════════════
    MEETUP FORM MODAL
 ══════════════════════════════════════════════════════════ */
-function MeetupForm({ withName, onSave, onClose }: { withName: string; onSave: (m: Omit<Meetup, "id" | "withId" | "proposedBy">) => void; onClose: () => void }) {
-  const [type, setType] = useState<MeetupType>("Coffee Chat");
+function MeetupForm({ withName, purpose, college, onSave, onClose }: {
+  withName: string; purpose: LookingFor; college: string;
+  onSave: (m: Omit<Meetup, "id" | "withId" | "proposedBy">) => void;
+  onClose: () => void;
+}) {
+  const campusLocations = getCampusLocations(college);
+  const [type, setType] = useState<MeetupType>(
+    purpose === "Study Partner" ? "Study Session" : purpose === "Friendship" ? "Coffee Chat" : "Coffee Chat"
+  );
   const [date, setDate] = useState(DATE_OPTIONS[1]);
   const [time, setTime] = useState("4:00 PM");
-  const [location, setLocation] = useState(LOCATIONS[0]);
+  const [location, setLocation] = useState(campusLocations[0] ?? "Central Cafeteria");
   const [notes, setNotes] = useState("");
+  const [availableDays, setAvailableDays] = useState<string[]>(["Saturday", "Sunday"]);
+  const [preferredTimeSlot, setPreferredTimeSlot] = useState<string>("4:00 PM – 7:00 PM");
+
+  const TIME_PREFS = ["Morning (8am–12pm)", "Afternoon (12pm–4pm)", "Evening (4pm–8pm)", "Flexible"];
+
+  const toggleDay = (d: string) =>
+    setAvailableDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d]);
+
+  const PURPOSE_COLORS: Record<LookingFor, string> = {
+    "Friendship":    "bg-violet-100 text-violet-700 border-violet-200",
+    "Study Partner": "bg-blue-100 text-blue-700 border-blue-200",
+    "Relationship":  "bg-rose-100 text-rose-700 border-rose-200",
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <motion.div initial={{ opacity: 0, scale: 0.96, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-md mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+        className="relative w-full max-w-lg mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={e => e.stopPropagation()}>
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-none">
           <div>
-            <h2 className="text-lg font-extrabold text-slate-900">Schedule Meetup</h2>
-            <p className="text-xs text-slate-500 mt-0.5">with {withName}</p>
+            <h2 className="text-lg font-extrabold text-slate-900">Propose Meetup</h2>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500">with <strong>{withName}</strong></p>
+              <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", PURPOSE_COLORS[purpose])}>
+                {purpose === "Friendship" ? "🤝" : purpose === "Study Partner" ? "📚" : "💞"} {purpose}
+              </span>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100"><X className="h-4 w-4 text-slate-400" /></button>
         </div>
-        <div className="px-6 py-5 space-y-5 overflow-y-auto">
+
+        <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
+          {/* Purpose banner */}
+          <div className={cn("rounded-xl px-4 py-3 border", PURPOSE_COLORS[purpose])}>
+            <p className="text-xs font-bold uppercase tracking-wider mb-0.5">Purpose</p>
+            <p className="text-sm font-semibold">
+              {purpose === "Friendship" ? "Making new friends — casual hangout 🤝" :
+               purpose === "Study Partner" ? "Study session — academic collaboration 📚" :
+               "Getting to know each other better 💞"}
+            </p>
+          </div>
+
           {/* Meetup Type */}
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">Meetup Type</p>
@@ -271,49 +324,86 @@ function MeetupForm({ withName, onSave, onClose }: { withName: string; onSave: (
               })}
             </div>
           </div>
-          {/* Date & Time */}
+
+          {/* My Availability */}
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">My Available Days</p>
+            <div className="flex flex-wrap gap-1.5">
+              {DAYS_OF_WEEK.map(d => (
+                <button key={d} onClick={() => toggleDay(d)}
+                  className={cn("text-xs font-bold px-3 py-1.5 rounded-full border-2 transition-all",
+                    availableDays.includes(d) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-500 border-slate-200 hover:border-blue-300")}>
+                  {d.slice(0, 3)}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Preferred Time</p>
+              <div className="flex flex-wrap gap-2">
+                {TIME_PREFS.map(t => (
+                  <button key={t} onClick={() => setPreferredTimeSlot(t)}
+                    className={cn("text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all",
+                      preferredTimeSlot === t ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-500 border-slate-200 hover:border-emerald-300")}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Proposed Date & Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Date</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Proposed Date</p>
               <select value={date} onChange={e => setDate(e.target.value)}
                 className="w-full h-10 rounded-xl border border-input bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
                 {DATE_OPTIONS.map(d => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Time</p>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Proposed Time</p>
               <select value={time} onChange={e => setTime(e.target.value)}
                 className="w-full h-10 rounded-xl border border-input bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
                 {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
           </div>
-          {/* Location */}
+
+          {/* Campus Location (mod-approved) */}
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Location</p>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Campus Location</p>
+              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">✓ Campus-approved</span>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {LOCATIONS.map(l => (
+              {campusLocations.map(l => (
                 <button key={l} onClick={() => setLocation(l)}
-                  className={cn("text-xs font-semibold px-3 py-1.5 rounded-full border transition-all",
+                  className={cn("text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all flex items-center gap-1.5",
                     location === l ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400")}>
-                  {l}
+                  <MapPin className="h-3 w-3" />{l}
                 </button>
               ))}
             </div>
+            <p className="text-[10px] text-slate-400 mt-1.5">Only safe, campus-approved public locations are shown. Managed by your college moderator.</p>
           </div>
+
           {/* Notes */}
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Notes <span className="font-normal text-slate-400 normal-case">(optional)</span></p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Notes <span className="font-normal normal-case text-slate-400">(optional)</span></p>
             <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="Anything to share before you meet…"
+              placeholder="Anything you want them to know beforehand…"
               className="w-full rounded-xl border border-input bg-slate-50 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
         </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex gap-3">
+
+        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-none">
           <Button variant="outline" className="px-5 h-11" onClick={onClose}>Cancel</Button>
-          <Button className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 font-bold"
-            onClick={() => { onSave({ withName, type, date, time, location, notes, status: "pending" }); onClose(); }}>
-            <Calendar className="h-4 w-4 mr-2" /> Propose Meetup
+          <Button className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 font-bold" disabled={availableDays.length === 0}
+            onClick={() => {
+              onSave({ withName, purpose, type, date, time, location, notes, status: "pending", availableDays, preferredTimeSlot });
+              onClose();
+            }}>
+            <Calendar className="h-4 w-4 mr-2" /> Send Meetup Request
           </Button>
         </div>
       </motion.div>
@@ -588,6 +678,8 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
       <AnimatePresence>
         {meetupOpen && (
           <MeetupForm key="meetup-form" withName={meetupOpen.name}
+            purpose={filterLF === "All" ? meetupOpen.lookingFor[0] : filterLF as LookingFor}
+            college={meetupOpen.college}
             onSave={() => notify(`Meetup proposed to ${meetupOpen.name}! ☕`)}
             onClose={() => setMeetupOpen(null)} />
         )}
@@ -779,6 +871,8 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
         )}
         {meetupOpen && (
           <MeetupForm key="mf" withName={meetupOpen.candidate.name}
+            purpose={meetupOpen.lookingFor}
+            college={meetupOpen.candidate.college}
             onSave={(m) => {
               setConnected(prev => prev.map(c => c.id !== meetupOpen.id ? c : { ...c, meetup: { ...m, id: `mu_${Date.now()}`, withId: meetupOpen.candidate.id, proposedBy: "me" } }));
               notify(`Meetup proposed to ${meetupOpen.candidate.name}! ☕`);
@@ -795,9 +889,9 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
 ══════════════════════════════════════════════════════════ */
 function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => void }) {
   const [meetups, setMeetups] = useState<Meetup[]>([
-    { id: "mu1", withName: "Riya Sharma", withId: "c1", type: "Study Session", date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room 3", notes: "Bring DS notes", status: "confirmed", proposedBy: "me" },
-    { id: "mu2", withName: "Sneha Nair", withId: "c3", type: "Coffee Chat", date: "This Saturday", time: "11:00 AM", location: "Cafeteria", notes: "", status: "pending", proposedBy: "them" },
-    { id: "mu3", withName: "Arjun Patel", withId: "c2", type: "Campus Walk", date: "Next Monday", time: "5:00 PM", location: "Central Garden", notes: "Around the lake trail", status: "pending", proposedBy: "me" },
+    { id: "mu1", withName: "Riya Sharma", withId: "c1", type: "Study Session", date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room A", notes: "Bring DS notes", status: "confirmed", proposedBy: "me", purpose: "Study Partner", availableDays: ["Monday","Wednesday","Friday"], preferredTimeSlot: "Afternoon (12pm–4pm)" },
+    { id: "mu2", withName: "Sneha Nair", withId: "c3", type: "Coffee Chat", date: "This Saturday", time: "11:00 AM", location: "Central Cafeteria", notes: "", status: "pending", proposedBy: "them", purpose: "Friendship", availableDays: ["Saturday","Sunday"], preferredTimeSlot: "Morning (8am–12pm)" },
+    { id: "mu3", withName: "Arjun Patel", withId: "c2", type: "Campus Walk", date: "Next Monday", time: "5:00 PM", location: "Central Garden", notes: "Around the lake trail", status: "pending", proposedBy: "me", purpose: "Friendship", availableDays: ["Monday","Thursday","Sunday"], preferredTimeSlot: "Evening (4pm–8pm)" },
   ]);
 
   const accept = (id: string) => { setMeetups(p => p.map(m => m.id === id ? { ...m, status: "confirmed" } : m)); notify("Meetup confirmed! 🎉"); };

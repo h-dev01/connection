@@ -1703,15 +1703,272 @@ function ListingsTab({ userName, userId }: { userName: string; userId?: number }
 }
 
 /* ══════════════════════════════════════════════════════════════
+   CAMPUS LOCATIONS TAB
+══════════════════════════════════════════════════════════════ */
+const LOCATIONS_KEY = "cc_campus_locations";
+const COLLEGES_DEMO = ["NIT Trichy", "IIT Madras", "Anna University", "SRM University", "VIT Vellore"];
+type LocationCategory = "Food & Cafe" | "Library & Study" | "Outdoor & Garden" | "Sports & Recreation" | "Academic Block" | "Student Center" | "Auditorium & Hall";
+const LOCATION_CATEGORIES: LocationCategory[] = ["Food & Cafe", "Library & Study", "Outdoor & Garden", "Sports & Recreation", "Academic Block", "Student Center", "Auditorium & Hall"];
+const CATEGORY_COLORS: Record<LocationCategory, string> = {
+  "Food & Cafe":          "bg-amber-100 text-amber-700",
+  "Library & Study":      "bg-blue-100 text-blue-700",
+  "Outdoor & Garden":     "bg-emerald-100 text-emerald-700",
+  "Sports & Recreation":  "bg-orange-100 text-orange-700",
+  "Academic Block":       "bg-violet-100 text-violet-700",
+  "Student Center":       "bg-pink-100 text-pink-700",
+  "Auditorium & Hall":    "bg-slate-100 text-slate-700",
+};
+
+export interface CampusLocation {
+  id: string; college: string; name: string;
+  category: LocationCategory; description: string;
+  capacity?: string; active: boolean;
+  addedBy: string; addedAt: string;
+}
+
+const SEED_LOCATIONS: CampusLocation[] = [
+  { id: "loc1", college: "NIT Trichy", name: "Central Cafeteria", category: "Food & Cafe", description: "Main campus cafeteria, ground floor. Open 8am–8pm.", capacity: "200", active: true, addedBy: "Priya Nair", addedAt: "2026-07-01" },
+  { id: "loc2", college: "NIT Trichy", name: "Library — Study Room A", category: "Library & Study", description: "Silent study room on 1st floor of central library.", capacity: "30", active: true, addedBy: "Priya Nair", addedAt: "2026-07-01" },
+  { id: "loc3", college: "NIT Trichy", name: "Central Garden", category: "Outdoor & Garden", description: "Open garden near the main fountain. Good for casual meetups.", capacity: "", active: true, addedBy: "Priya Nair", addedAt: "2026-07-01" },
+  { id: "loc4", college: "NIT Trichy", name: "Student Activity Center", category: "Student Center", description: "Multi-purpose hall with seating. Clubs and events venue.", capacity: "150", active: true, addedBy: "Priya Nair", addedAt: "2026-07-01" },
+  { id: "loc5", college: "NIT Trichy", name: "Sports Complex Lobby", category: "Sports & Recreation", description: "Lobby area outside the main sports complex.", capacity: "50", active: true, addedBy: "Priya Nair", addedAt: "2026-07-01" },
+  { id: "loc6", college: "NIT Trichy", name: "Open Air Theatre", category: "Auditorium & Hall", description: "Outdoor stage area near hostel block. Popular for evenings.", capacity: "300", active: true, addedBy: "Priya Nair", addedAt: "2026-07-02" },
+  { id: "loc7", college: "NIT Trichy", name: "CS Block Atrium", category: "Academic Block", description: "Ground floor atrium of CS block. Good for study or project discussions.", capacity: "40", active: true, addedBy: "Priya Nair", addedAt: "2026-07-02" },
+];
+
+function CampusLocationsTab({ userName }: { userName: string }) {
+  const loadLocs = (): CampusLocation[] => {
+    try { const s = localStorage.getItem(LOCATIONS_KEY); return s ? JSON.parse(s) : SEED_LOCATIONS; }
+    catch { return SEED_LOCATIONS; }
+  };
+  const [locations, setLocations] = useState<CampusLocation[]>(loadLocs);
+  const [filterCollege, setFilterCollege] = useState("NIT Trichy");
+  const [filterCat, setFilterCat] = useState<LocationCategory | "">("");
+  const [search, setSearch] = useState("");
+  const [dialog, setDialog] = useState<{ mode: "add" | "edit"; loc?: CampusLocation } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success"|"error" } | null>(null);
+  const [form, setForm] = useState<Omit<CampusLocation, "id"|"addedBy"|"addedAt">>({
+    college: "NIT Trichy", name: "", category: "Food & Cafe", description: "", capacity: "", active: true,
+  });
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const save = (locs: CampusLocation[]) => { setLocations(locs); localStorage.setItem(LOCATIONS_KEY, JSON.stringify(locs)); };
+  const notify = (msg: string, type: "success"|"error" = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
+
+  const openAdd = () => {
+    setForm({ college: filterCollege || "NIT Trichy", name: "", category: "Food & Cafe", description: "", capacity: "", active: true });
+    setDialog({ mode: "add" });
+  };
+  const openEdit = (loc: CampusLocation) => {
+    setForm({ college: loc.college, name: loc.name, category: loc.category, description: loc.description, capacity: loc.capacity ?? "", active: loc.active });
+    setDialog({ mode: "edit", loc });
+  };
+  const handleSave = () => {
+    if (!form.name.trim() || !form.college) return;
+    if (dialog?.mode === "add") {
+      const newLoc: CampusLocation = { ...form, id: `loc_${Date.now()}`, addedBy: userName, addedAt: new Date().toISOString().slice(0, 10) };
+      save([...locations, newLoc]);
+      notify("Location added successfully!");
+    } else if (dialog?.loc) {
+      save(locations.map(l => l.id === dialog.loc!.id ? { ...l, ...form } : l));
+      notify("Location updated.");
+    }
+    setDialog(null);
+  };
+  const handleDelete = (id: string) => { save(locations.filter(l => l.id !== id)); setConfirmDelete(null); notify("Location removed.", "error"); };
+  const toggleActive = (id: string) => {
+    const updated = locations.map(l => l.id === id ? { ...l, active: !l.active } : l);
+    save(updated);
+  };
+
+  const filtered = locations.filter(l =>
+    (!filterCollege || l.college === filterCollege) &&
+    (!filterCat || l.category === filterCat) &&
+    (!search || l.name.toLowerCase().includes(search.toLowerCase()) || l.description.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  const byCollege = COLLEGES_DEMO.map(c => ({ college: c, count: locations.filter(l => l.college === c && l.active).length }));
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900">Campus Meetup Locations</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Manage approved locations students can use for Campus Match meetups.</p>
+        </div>
+        <Button onClick={openAdd} className="gap-1.5 bg-blue-600 hover:bg-blue-700">
+          <Plus className="h-4 w-4" /> Add Location
+        </Button>
+      </div>
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className={cn("text-white text-sm font-semibold px-4 py-3 rounded-xl flex items-center gap-2 shadow-lg",
+              toast.type === "error" ? "bg-red-600" : "bg-emerald-600")}>
+            {toast.type === "error" ? <XCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+            {toast.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+        {byCollege.slice(0, 5).map(({ college, count }) => (
+          <button key={college} onClick={() => setFilterCollege(college === filterCollege ? "" : college)}
+            className={cn("rounded-xl border p-3 text-left transition-all",
+              filterCollege === college ? "border-blue-600 bg-blue-50" : "bg-white border-slate-200 hover:border-slate-300")}>
+            <p className={cn("text-lg font-extrabold", filterCollege === college ? "text-blue-700" : "text-slate-900")}>{count}</p>
+            <p className={cn("text-[10px] font-semibold leading-tight mt-0.5", filterCollege === college ? "text-blue-600" : "text-slate-500")}>{college}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search locations…"
+            className="h-9 pl-8 pr-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 w-48" />
+        </div>
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value as LocationCategory | "")}
+          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">All Categories</option>
+          {LOCATION_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-xs text-slate-400 ml-auto">{filtered.length} locations</span>
+      </div>
+
+      {/* Location list */}
+      <div className="space-y-2">
+        {filtered.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <MapPin className="h-10 w-10 mx-auto mb-3 opacity-30" />
+            <p className="font-semibold">No locations found</p>
+            <p className="text-sm mt-1">Add campus meetup locations for students to use.</p>
+          </div>
+        ) : filtered.map(loc => (
+          <motion.div key={loc.id} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+            className={cn("bg-white rounded-2xl border shadow-sm p-4 flex items-start gap-4 transition-all",
+              loc.active ? "border-slate-200" : "border-slate-100 opacity-60")}>
+            <div className="mt-0.5">
+              <button onClick={() => toggleActive(loc.id)}
+                className={cn("relative w-10 h-5 rounded-full transition-all flex-none",
+                  loc.active ? "bg-emerald-500" : "bg-slate-300")}>
+                <span className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all", loc.active ? "left-5" : "left-0.5")} />
+              </button>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="font-bold text-slate-900">{loc.name}</h4>
+                <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full", CATEGORY_COLORS[loc.category])}>{loc.category}</span>
+                {!loc.active && <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Inactive</span>}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">{loc.description}</p>
+              <div className="flex items-center gap-3 mt-1.5 text-[10px] text-slate-400">
+                <span className="font-semibold text-slate-600">{loc.college}</span>
+                {loc.capacity && <span>Capacity: ~{loc.capacity}</span>}
+                <span>Added by {loc.addedBy} · {loc.addedAt}</span>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-none">
+              <button onClick={() => openEdit(loc)}
+                className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all">
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={() => setConfirmDelete(loc.id)}
+                className="h-8 w-8 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-300 hover:bg-red-50 transition-all">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={!!dialog} onOpenChange={open => { if (!open) setDialog(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{dialog?.mode === "add" ? "Add Campus Location" : "Edit Location"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Location Name *</label>
+                <Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Central Cafeteria" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">College *</label>
+                <select value={form.college} onChange={e => setForm(p => ({ ...p, college: e.target.value }))}
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  {COLLEGES_DEMO.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Category *</label>
+                <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value as LocationCategory }))}
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  {LOCATION_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Description</label>
+                <textarea rows={2} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+                  placeholder="Location details, building, floor, timings…"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Capacity (optional)</label>
+                <Input value={form.capacity ?? ""} onChange={e => setForm(p => ({ ...p, capacity: e.target.value }))} placeholder="e.g. 50" />
+              </div>
+              <div className="flex items-end pb-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <button onClick={() => setForm(p => ({ ...p, active: !p.active }))}
+                    className={cn("relative w-10 h-5 rounded-full transition-all", form.active ? "bg-emerald-500" : "bg-slate-300")}>
+                    <span className={cn("absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all", form.active ? "left-5" : "left-0.5")} />
+                  </button>
+                  <span className="text-sm font-semibold text-slate-700">Active</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button variant="outline" onClick={() => setDialog(null)}>Cancel</Button>
+              <Button onClick={handleSave} disabled={!form.name.trim() || !form.college} className="bg-blue-600 hover:bg-blue-700">
+                {dialog?.mode === "add" ? "Add Location" : "Save Changes"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete */}
+      <Dialog open={!!confirmDelete} onOpenChange={open => { if (!open) setConfirmDelete(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Remove Location?</DialogTitle></DialogHeader>
+          <p className="text-sm text-slate-600 py-2">This location will no longer be available for students to schedule meetups. This cannot be undone.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => confirmDelete && handleDelete(confirmDelete)}>Remove</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    MAIN MODERATOR PAGE
 ══════════════════════════════════════════════════════════════ */
-type Tab = "toggles" | "materials" | "schedules" | "timetables" | "reports" | "listings" | "banners";
+type Tab = "toggles" | "materials" | "schedules" | "timetables" | "reports" | "listings" | "banners" | "locations";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "toggles",   label: "Feature Toggles", icon: ToggleRight },
   { id: "materials", label: "Study Materials",  icon: FileText },
   { id: "listings",  label: "Listings",         icon: Store },
   { id: "banners",   label: "Ad Banners",       icon: ImageIcon },
+  { id: "locations", label: "Campus Locations", icon: MapPin },
   { id: "reports",   label: "Reports",          icon: Flag },
 ];
 
@@ -1755,6 +2012,7 @@ export default function Moderator() {
             {activeTab === "materials"  && <StudyMaterialsTab userName={userName} />}
             {activeTab === "listings"   && <ListingsTab userName={userName} userId={userId} />}
             {activeTab === "banners"    && <BannersTab userName={userName} userId={userId} />}
+            {activeTab === "locations"  && <CampusLocationsTab userName={userName} />}
             {activeTab === "reports"    && <ReportsTab />}
           </motion.div>
         </AnimatePresence>
