@@ -7,16 +7,16 @@
  */
 import { Link, useLocation } from "wouter";
 import {
-  LayoutDashboard, BookOpen, ShoppingBag, Users,
+  Bell, BookOpen, ShoppingBag, Users,
   Briefcase, Tent, User, Settings, ShieldCheck,
-  Bell, Heart, LogOut, GraduationCap, ShieldAlert,
+  Heart, LogOut, GraduationCap, ShieldAlert,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
 const NAV_ITEMS = [
-  { label: "Dashboard",    href: "/dashboard",  icon: LayoutDashboard },
-  { label: "Study Hub",    href: "/study",       icon: BookOpen },
+  { label: "Notifications", href: "/notifications", icon: Bell },
+  { label: "Study Hub",     href: "/study",          icon: BookOpen },
   { label: "Marketplace",  href: "/marketplace", icon: ShoppingBag },
   { label: "Community",    href: "/community",   icon: Users },
   { label: "Campus Match", href: "/match",       icon: Heart, badge: "New" },
@@ -127,13 +127,6 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
 
         {/* Bottom — user info + logout */}
         <div className="p-3 border-t border-sidebar-border/50 space-y-1">
-          {/* Notifications */}
-          <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sidebar-foreground/60 hover:text-white hover:bg-sidebar-accent/40 cursor-pointer transition-all">
-            <Bell className="h-4 w-4" />
-            <span className="text-sm font-medium">Notifications</span>
-            <span className="ml-auto text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5 font-bold leading-none">3</span>
-          </div>
-
           {/* User identity chip */}
           {user && (
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg">

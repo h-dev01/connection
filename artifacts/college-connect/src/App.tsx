@@ -12,7 +12,7 @@ import { ProfileCompleteModal } from "@/components/shared/ProfileCompleteModal";
 import Home from "@/features/home/HomePage";
 import Login from "@/features/auth/LoginPage";
 import Signup from "@/features/auth/SignupPage";
-import Dashboard from "@/features/dashboard/DashboardPage";
+import Notifications from "@/features/notifications/NotificationsPage";
 import Study from "@/features/study/StudyPage";
 import Marketplace from "@/features/marketplace/MarketplacePage";
 import Community from "@/features/community/CommunityPage";
@@ -41,8 +41,11 @@ function Router() {
       <Route path="/signup" component={Signup} />
 
       {/* App pages */}
+      <Route path="/notifications">
+        <SidebarLayout><Notifications /></SidebarLayout>
+      </Route>
       <Route path="/dashboard">
-        <SidebarLayout><Dashboard /></SidebarLayout>
+        <Redirect to="/notifications" />
       </Route>
       <Route path="/study">
         <SidebarLayout><Study /></SidebarLayout>
