@@ -6,6 +6,7 @@ import NotFound from "@/features/misc/NotFoundPage";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 import { AuthProvider, useAuth, type UserRole } from "@/contexts/AuthContext";
 import { SubmissionsProvider } from "@/contexts/SubmissionsContext";
+import { NotificationsProvider } from "@/contexts/NotificationsContext";
 import { ProfileCompleteModal } from "@/components/shared/ProfileCompleteModal";
 
 // Feature pages — one folder per website feature (see AIread.md for the full map)
@@ -84,6 +85,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <NotificationsProvider>
         <SubmissionsProvider>
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
@@ -93,6 +95,7 @@ export default function App() {
             <Toaster />
           </TooltipProvider>
         </SubmissionsProvider>
+        </NotificationsProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
