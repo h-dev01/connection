@@ -110,6 +110,91 @@ function calcAge(dob: string): number {
 }
 
 /* ══════════════════════════════════════════════════════════
+   COMPATIBILITY ENGINE
+   Weights: Interests 28 | LookingFor 20 | Personality 15
+            Hobbies 12 | StudyStyle 10 | Music 8 | Sports 7
+   Total = 100 pts → clamped to 30–99
+══════════════════════════════════════════════════════════ */
+export interface CompatBreakdown {
+  score: number;
+  interests: number; lookingFor: number; personality: number;
+  hobbies: number; studyStyle: number; music: number; sports: number;
+  sharedInterests: string[]; sharedHobbies: string[]; sharedMusic: string[]; sharedSports: string[];
+  profileComplete: boolean;
+}
+
+function overlap(a: string[], b: string[]): string[] {
+  const bSet = new Set(b.map(s => s.toLowerCase()));
+  return a.filter(s => bSet.has(s.toLowerCase()));
+}
+function pct(shared: number, total: number): number {
+  return total === 0 ? 0 : shared / total;
+}
+
+export function calculateCompatibility(profile: MatchProfile | null, candidate: Candidate): CompatBreakdown {
+  if (!profile || (!profile.interests.length && !profile.hobbies.length && !profile.lookingFor.length)) {
+    return {
+      score: candidate.compatibility, interests: 0, lookingFor: 0, personality: 0,
+      hobbies: 0, studyStyle: 0, music: 0, sports: 0,
+      sharedInterests: [], sharedHobbies: [], sharedMusic: [], sharedSports: [],
+      profileComplete: false,
+    };
+  }
+
+  // 1. Interests (28 pts)
+  const sharedInterests = overlap(profile.interests, candidate.interests);
+  const interestsScore = pct(sharedInterests.length,
+    Math.max(profile.interests.length, candidate.interests.length, 1)) * 28;
+
+  // 2. LookingFor overlap (20 pts)
+  const lfOverlap = profile.lookingFor.filter(lf => candidate.lookingFor.includes(lf)).length;
+  const lookingForScore = lfOverlap > 0 ? (lfOverlap / Math.max(profile.lookingFor.length, 1)) * 20 : 0;
+
+  // 3. Personality (15 pts)
+  let personalityScore = 0;
+  if (profile.personality === candidate.personality) personalityScore = 15;
+  else if (profile.personality === "Ambivert" || candidate.personality === "Ambivert") personalityScore = 10;
+  else personalityScore = 4; // opposite types still get some
+
+  // 4. Hobbies (12 pts)
+  const sharedHobbies = overlap(profile.hobbies, candidate.hobbies);
+  const hobbiesScore = pct(sharedHobbies.length,
+    Math.max(profile.hobbies.length, candidate.hobbies.length, 1)) * 12;
+
+  // 5. Study style (10 pts)
+  let studyScore = 0;
+  if (profile.studyStyle === "Either" || candidate.studyStyle === "Either") studyScore = 7;
+  else if (profile.studyStyle === candidate.studyStyle) studyScore = 10;
+  else studyScore = 2;
+
+  // 6. Music (8 pts)
+  const sharedMusic = overlap(profile.music, candidate.music);
+  const musicScore = pct(sharedMusic.length,
+    Math.max(profile.music.length, candidate.music.length, 1)) * 8;
+
+  // 7. Sports (7 pts)
+  const sharedSports = overlap(profile.sports, candidate.sports);
+  const sportsScore = pct(sharedSports.length,
+    Math.max(profile.sports.length, candidate.sports.length, 1)) * 7;
+
+  const raw = interestsScore + lookingForScore + personalityScore + hobbiesScore + studyScore + musicScore + sportsScore;
+  const score = Math.min(99, Math.max(30, Math.round(raw)));
+
+  return {
+    score, profileComplete: true,
+    interests: Math.round(interestsScore), lookingFor: Math.round(lookingForScore),
+    personality: Math.round(personalityScore), hobbies: Math.round(hobbiesScore),
+    studyStyle: Math.round(studyScore), music: Math.round(musicScore), sports: Math.round(sportsScore),
+    sharedInterests, sharedHobbies, sharedMusic, sharedSports,
+  };
+}
+
+function loadMatchProfile(): MatchProfile | null {
+  try { const s = localStorage.getItem("cc_match_profile"); return s ? JSON.parse(s) : null; }
+  catch { return null; }
+}
+
+/* ══════════════════════════════════════════════════════════
    SEED DATA
 ══════════════════════════════════════════════════════════ */
 const CANDIDATES: Candidate[] = [
@@ -486,6 +571,23 @@ function CandidateProfileModal({ candidate, onConnect, onPass, onClose }: {
 }
 
 /* ══════════════════════════════════════════════════════════
+   COMPAT BREAKDOWN MINI CARD
+══════════════════════════════════════════════════════════ */
+function BreakdownBar({ label, score, max, color }: { label: string; score: number; max: number; color: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-slate-500 w-16 flex-none">{label}</span>
+      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <motion.div className={cn("h-full rounded-full", color)}
+          initial={{ width: 0 }} animate={{ width: `${(score / max) * 100}%` }}
+          transition={{ duration: 0.6, ease: "easeOut" }} />
+      </div>
+      <span className="text-[10px] font-bold text-slate-700 w-6 text-right">{score}</span>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
    DISCOVER TAB
 ══════════════════════════════════════════════════════════ */
 function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: LookingFor) => void; notify: (m: string, t?: "success"|"warn") => void }) {
@@ -494,10 +596,24 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
   const [matchDialog, setMatchDialog] = useState<Candidate | null>(null);
   const [filterLF, setFilterLF] = useState<LookingFor | "All">("All");
   const [meetupOpen, setMeetupOpen] = useState<Candidate | null>(null);
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [myProfile, setMyProfile] = useState<MatchProfile | null>(loadMatchProfile);
 
-  const pool = CANDIDATES.filter(c => !decisions[c.id] &&
-    (filterLF === "All" || c.lookingFor.includes(filterLF as LookingFor)));
-  const current = pool[0] ?? null;
+  // Re-read profile whenever tab becomes active
+  useEffect(() => {
+    const refresh = () => setMyProfile(loadMatchProfile());
+    window.addEventListener("storage", refresh);
+    return () => window.removeEventListener("storage", refresh);
+  }, []);
+
+  // Compute live scores for every candidate
+  const scoredPool = CANDIDATES
+    .filter(c => !decisions[c.id] && (filterLF === "All" || c.lookingFor.includes(filterLF as LookingFor)))
+    .map(c => ({ ...c, liveCompat: calculateCompatibility(myProfile, c) }))
+    .sort((a, b) => b.liveCompat.score - a.liveCompat.score);
+
+  const current = scoredPool[0] ?? null;
+  const currentCompat = current?.liveCompat ?? null;
 
   const decide = (c: Candidate, d: "liked" | "passed") => {
     setDecisions(prev => ({ ...prev, [c.id]: d }));
@@ -513,6 +629,25 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
 
   return (
     <div className="space-y-5">
+      {/* Profile-completeness nudge */}
+      {myProfile && !currentCompat?.profileComplete && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <Zap className="h-4 w-4 text-amber-500 flex-none" />
+          <p className="text-xs text-amber-700 font-semibold flex-1">
+            Fill in <strong>My Profile</strong> to get a real compatibility score based on your interests, personality & goals.
+          </p>
+          <span className="text-[10px] bg-amber-200 text-amber-800 font-bold px-2 py-0.5 rounded-full">Using defaults</span>
+        </motion.div>
+      )}
+      {currentCompat?.profileComplete && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 flex-none" />
+          <p className="text-xs text-emerald-700 font-semibold">Scores calculated from <strong>your profile</strong> — sorted by best match first.</p>
+        </motion.div>
+      )}
+
       {/* Looking-for filter */}
       <div className="flex gap-2 flex-wrap items-center">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Showing:</span>
@@ -529,9 +664,8 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
         <div className="flex gap-6 items-start">
           {/* Card stack */}
           <div className="flex-1 max-w-sm">
-            {/* Ghost stack behind */}
-            {pool[1] && <div className="w-full h-4 bg-white rounded-3xl border border-slate-100 shadow-sm mx-auto scale-95 -mb-4 opacity-50" />}
-            {pool[2] && <div className="w-full h-4 bg-white rounded-3xl border border-slate-100 shadow-sm mx-auto scale-90 -mb-4 opacity-30" />}
+            {scoredPool[1] && <div className="w-full h-4 bg-white rounded-3xl border border-slate-100 shadow-sm mx-auto scale-95 -mb-4 opacity-50" />}
+            {scoredPool[2] && <div className="w-full h-4 bg-white rounded-3xl border border-slate-100 shadow-sm mx-auto scale-90 -mb-4 opacity-30" />}
             <AnimatePresence mode="wait">
               <motion.div key={current.id}
                 initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -549,7 +683,7 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
                   )}
                   <span className="absolute top-3 right-3 bg-white/90 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{current.college}</span>
                 </div>
-                {/* Avatar overlap */}
+                {/* Avatar */}
                 <div className="absolute top-[68px] left-4">
                   <div className={cn("w-16 h-16 rounded-2xl border-4 border-white flex items-center justify-center text-white font-bold text-xl shadow-md", current.color)}>
                     {current.initials}
@@ -558,25 +692,70 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
 
                 <div className="px-5 pt-10 pb-4 space-y-3">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-extrabold text-slate-900">{current.name}, {current.age}</h3>
-                    </div>
+                    <h3 className="text-lg font-extrabold text-slate-900">{current.name}, {current.age}</h3>
                     <p className="text-xs text-slate-500">{current.dept} · {current.year} · {current.zodiac}</p>
                   </div>
 
-                  {/* Match % */}
+                  {/* Live Match Score */}
                   <div>
-                    <div className="flex justify-between mb-1"><span className="text-xs font-semibold text-slate-500">Match Score</span></div>
-                    <CompatBar score={current.compatibility} />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-600">Match Score</span>
+                        {currentCompat?.profileComplete
+                          ? <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">Live</span>
+                          : <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-full">Default</span>
+                        }
+                      </div>
+                      <button onClick={() => setShowBreakdown(p => !p)}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold flex items-center gap-0.5">
+                        {showBreakdown ? "Hide" : "Why?"} <ChevronRight className={cn("h-3 w-3 transition-transform", showBreakdown && "rotate-90")} />
+                      </button>
+                    </div>
+                    <CompatBar score={currentCompat?.score ?? current.compatibility} />
                   </div>
+
+                  {/* Score breakdown panel */}
+                  <AnimatePresence>
+                    {showBreakdown && currentCompat && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden">
+                        <div className="bg-slate-50 rounded-2xl p-3 space-y-1.5 border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Score breakdown</p>
+                          <BreakdownBar label="Interests"   score={currentCompat.interests}   max={28} color="bg-blue-500" />
+                          <BreakdownBar label="Looking for" score={currentCompat.lookingFor}  max={20} color="bg-violet-500" />
+                          <BreakdownBar label="Personality" score={currentCompat.personality} max={15} color="bg-emerald-500" />
+                          <BreakdownBar label="Hobbies"     score={currentCompat.hobbies}     max={12} color="bg-amber-500" />
+                          <BreakdownBar label="Study style" score={currentCompat.studyStyle}  max={10} color="bg-pink-500" />
+                          <BreakdownBar label="Music"       score={currentCompat.music}       max={8}  color="bg-rose-400" />
+                          <BreakdownBar label="Sports"      score={currentCompat.sports}      max={7}  color="bg-orange-400" />
+                          {currentCompat.sharedInterests.length > 0 && (
+                            <div className="pt-1.5 border-t border-slate-200 mt-1">
+                              <p className="text-[10px] text-slate-400 mb-1">Shared interests:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {currentCompat.sharedInterests.map(i => (
+                                  <span key={i} className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{i}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <p className="text-sm text-slate-600 leading-relaxed line-clamp-2">{current.bio}</p>
 
-                  {/* Interest chips */}
+                  {/* Interest chips — highlight shared ones */}
                   <div className="flex flex-wrap gap-1.5">
-                    {[...current.interests, ...current.hobbies].slice(0, 5).map(i => (
-                      <span key={i} className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">{i}</span>
-                    ))}
+                    {[...current.interests, ...current.hobbies].slice(0, 6).map(i => {
+                      const isShared = currentCompat?.sharedInterests.includes(i) || currentCompat?.sharedHobbies.includes(i);
+                      return (
+                        <span key={i} className={cn("px-2.5 py-1 rounded-full text-xs font-medium",
+                          isShared ? "bg-blue-100 text-blue-700 font-bold" : "bg-slate-100 text-slate-600")}>
+                          {isShared && "✓ "}{i}
+                        </span>
+                      );
+                    })}
                   </div>
 
                   {/* Looking for */}
@@ -607,19 +786,40 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
             </AnimatePresence>
           </div>
 
-          {/* Side info */}
-          <div className="hidden lg:block w-52 space-y-4 pt-2 flex-none">
+          {/* Side panel */}
+          <div className="hidden lg:block w-56 space-y-4 pt-2 flex-none">
             <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4 text-center">
               <p className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">In pool</p>
-              <p className="text-4xl font-extrabold text-blue-700">{pool.length}</p>
-              <p className="text-xs text-blue-500 mt-0.5">students near you</p>
+              <p className="text-4xl font-extrabold text-blue-700">{scoredPool.length}</p>
+              <p className="text-xs text-blue-500 mt-0.5">sorted by best match</p>
             </div>
+
+            {/* Top-3 quick preview */}
+            {scoredPool.slice(1, 4).length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-3 space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Up next</p>
+                {scoredPool.slice(1, 4).map(c => (
+                  <div key={c.id} className="flex items-center gap-2">
+                    <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold flex-none", c.color)}>{c.initials}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 truncate">{c.name}</p>
+                      <div className="w-full h-1 bg-slate-100 rounded-full mt-0.5 overflow-hidden">
+                        <div className={cn("h-full rounded-full", c.liveCompat.score >= 75 ? "bg-emerald-500" : "bg-blue-400")}
+                          style={{ width: `${c.liveCompat.score}%` }} />
+                      </div>
+                    </div>
+                    <span className={cn("text-[10px] font-extrabold", c.liveCompat.score >= 75 ? "text-emerald-600" : "text-blue-500")}>{c.liveCompat.score}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3">
               {[
                 { icon: Shield, text: "Verified .edu emails only" },
-                { icon: Star,   text: "AI-powered compatibility score" },
-                { icon: CheckCircle2, text: "Mutual consent to connect" },
-                { icon: MapPin, text: "Public campus meetups only" },
+                { icon: Zap,    text: "Score = interests + personality + goals" },
+                { icon: CheckCircle2, text: "Mutual consent required" },
+                { icon: MapPin, text: "Campus-approved meetups" },
               ].map(({ icon: Icon, text }) => (
                 <div key={text} className="flex items-start gap-2">
                   <Icon className="h-3.5 w-3.5 text-blue-500 flex-none mt-0.5" />
@@ -635,7 +835,7 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
             <RefreshCw className="h-8 w-8 text-slate-400" />
           </div>
           <h3 className="font-bold text-slate-800 text-lg mb-1">You've seen everyone!</h3>
-          <p className="text-slate-500 text-sm mb-6 max-w-xs">New profiles join daily. Try a different filter or reset the deck.</p>
+          <p className="text-slate-500 text-sm mb-6 max-w-xs">New profiles join daily. Try a different filter or reset.</p>
           <Button variant="outline" onClick={() => setDecisions({})}><RefreshCw className="h-4 w-4 mr-2" />Reset Deck</Button>
         </div>
       )}
@@ -663,7 +863,8 @@ function DiscoverTab({ onConnect, notify }: { onConnect: (c: Candidate, lf: Look
                 <Heart className="h-9 w-9 text-rose-500 fill-rose-500" />
               </motion.div>
               <h3 className="text-2xl font-extrabold text-slate-900 mb-1">It's a Match! 🎉</h3>
-              <p className="text-slate-500 text-sm mb-6">You and <strong>{matchDialog.name}</strong> connected! Schedule a campus meetup.</p>
+              <p className="text-slate-500 text-sm mb-1">You and <strong>{matchDialog.name}</strong> connected!</p>
+              <p className="text-xs text-slate-400 mb-6">Propose a campus meetup to get to know each other.</p>
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1 h-11" onClick={() => setMatchDialog(null)}>Later</Button>
                 <Button className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 font-bold" onClick={() => { setMeetupOpen(matchDialog); setMatchDialog(null); }}>
@@ -1021,8 +1222,10 @@ function MyProfileTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
 
   const save = () => {
     localStorage.setItem(SAVED_KEY, JSON.stringify(profile));
+    // Dispatch a storage event so the Discover tab reloads scores in this window
+    window.dispatchEvent(new StorageEvent("storage", { key: SAVED_KEY }));
     setSaved(true);
-    notify("Profile saved! ✨");
+    notify("Profile saved! Scores updated in Discover ✨");
     setTimeout(() => setSaved(false), 2500);
   };
 
