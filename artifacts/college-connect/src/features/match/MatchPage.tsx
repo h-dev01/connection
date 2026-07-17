@@ -2,7 +2,7 @@
  * Campus Match — full peer-matching system
  * Tabs: Discover | My Matches | Meetups | My Profile
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart, Users, BookOpen, X, Check, MapPin, Clock, Calendar,
@@ -11,7 +11,7 @@ import {
   Settings, Ban, Flag, Eye, EyeOff, Bell, ArrowLeft, ArrowRight,
   Pencil, Save, Cake, Phone, GraduationCap, UserCheck, UserX,
   MessageCircle, Zap, Music, Gamepad2, Film, Book, Cpu, Dumbbell,
-  Moon, Sun, Brain, Globe, Lock, Plus, Minus, ChevronDown,
+  Moon, Sun, Brain, Globe, Lock, Plus, Minus, ChevronDown, Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,7 @@ interface MatchProfile {
   prefInterests: string[];
   visibility: Visibility;
   bio: string;
+  photos: string[]; // base64 data URLs, min 1 max 2
 }
 
 interface Candidate {
@@ -1535,7 +1536,7 @@ function defaultProfile(user: ReturnType<typeof useAuth>["user"]): MatchProfile 
     prefGender: "Any", prefCollege: "own",
     prefPersonality: "Either", prefStudyStyle: "Either",
     prefInterests: [], visibility: "own-college",
-    bio: "",
+    bio: "", photos: [],
   };
 }
 
@@ -1545,6 +1546,30 @@ function MyProfileTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
     try { const s = localStorage.getItem(SAVED_KEY); return s ? JSON.parse(s) : defaultProfile(user); } catch { return defaultProfile(user); }
   });
   const [saved, setSaved] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    const slots = 2 - (profile.photos?.length ?? 0);
+    const toAdd = files.slice(0, slots);
+    toAdd.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProfile(p => {
+          const current = p.photos ?? [];
+          if (current.length >= 2) return p;
+          return { ...p, photos: [...current, reader.result as string] };
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+    if (files.length > slots && slots === 0) notify("Maximum 2 photos allowed.", "warn");
+  };
+
+  const removePhoto = (idx: number) =>
+    setProfile(p => ({ ...p, photos: (p.photos ?? []).filter((_, i) => i !== idx) }));
 
   useEffect(() => {
     if (profile.dob) {
@@ -1559,6 +1584,10 @@ function MyProfileTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
   };
 
   const save = () => {
+    if ((profile.photos ?? []).length < 1) {
+      notify("Please add at least 1 photo before saving.", "warn");
+      return;
+    }
     localStorage.setItem(SAVED_KEY, JSON.stringify(profile));
     // Dispatch a storage event so the Discover tab reloads scores in this window
     window.dispatchEvent(new StorageEvent("storage", { key: SAVED_KEY }));
@@ -1598,6 +1627,47 @@ function MyProfileTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
 
   return (
     <div className="max-w-2xl space-y-5">
+      {/* Photos */}
+      <Section title="My Photos" icon={Camera}>
+        <p className="text-xs text-slate-500 -mt-2">Upload at least <strong>1</strong> photo, up to <strong>2</strong>. These show on your match card.</p>
+
+        {/* Preview row */}
+        <div className="flex gap-3">
+          {(profile.photos ?? []).map((src, idx) => (
+            <div key={idx} className="relative w-32 h-32 rounded-2xl overflow-hidden border-2 border-slate-200 shadow-sm group">
+              <img src={src} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+              <button onClick={() => removePhoto(idx)}
+                className="absolute top-1 right-1 bg-black/60 hover:bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <X className="h-3.5 w-3.5" />
+              </button>
+              <div className="absolute bottom-1 left-1 bg-black/50 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {idx === 0 ? "Main" : "2nd"}
+              </div>
+            </div>
+          ))}
+
+          {/* Upload slot — shown when fewer than 2 photos */}
+          {(profile.photos ?? []).length < 2 && (
+            <button onClick={() => fileInputRef.current?.click()}
+              className="w-32 h-32 rounded-2xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 flex flex-col items-center justify-center gap-1.5 transition-all text-slate-400 hover:text-blue-500">
+              <Camera className="h-7 w-7" />
+              <span className="text-xs font-semibold">
+                {(profile.photos ?? []).length === 0 ? "Add photo" : "Add 2nd"}
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* Hint when no photos */}
+        {(profile.photos ?? []).length === 0 && (
+          <p className="text-xs text-amber-600 font-semibold flex items-center gap-1">
+            <span>⚠️</span> At least 1 photo is required before saving.
+          </p>
+        )}
+
+        <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
+      </Section>
+
       {/* Basic info */}
       <Section title="Basic Info (Auto-filled from account)" icon={User}>
         <div className="grid grid-cols-2 gap-4">
