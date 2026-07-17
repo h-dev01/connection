@@ -84,6 +84,11 @@ interface Meetup {
   preferredTimeSlot: string;
   editCount: number;        // how many edit-requests have been made
   editRequestBy?: "me" | "them"; // who sent the latest edit request
+  // Pending edit proposal — set when someone requests an edit
+  pendingDate?: string;
+  pendingTime?: string;
+  pendingLocation?: string;
+  pendingNotes?: string;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -492,6 +497,125 @@ function MeetupForm({ withName, purpose, college, onSave, onClose }: {
             }}>
             <Calendar className="h-4 w-4 mr-2" /> Send Meetup Request
           </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   EDIT REQUEST FORM MODAL
+   Lets Student A propose a new date / time / location
+══════════════════════════════════════════════════════════ */
+function EditRequestForm({ meetup, college, onSave, onClose }: {
+  meetup: Meetup; college: string;
+  onSave: (pendingDate: string, pendingTime: string, pendingLocation: string, pendingNotes: string) => void;
+  onClose: () => void;
+}) {
+  const campusLocations = getCampusLocations(college);
+  const [date, setDate]         = useState(meetup.date);
+  const [time, setTime]         = useState(meetup.time);
+  const [location, setLocation] = useState(meetup.location);
+  const [notes, setNotes]       = useState(meetup.notes ?? "");
+
+  const changed = date !== meetup.date || time !== meetup.time || location !== meetup.location || notes !== meetup.notes;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <motion.div initial={{ opacity: 0, scale: 0.96, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="relative w-full max-w-md mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between flex-none">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900">Request Schedule Change</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Proposing a new time for your <strong>{meetup.type}</strong> with <strong>{meetup.withName}</strong>
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100">
+            <X className="h-4 w-4 text-slate-400" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
+          {/* Current schedule */}
+          <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-200 space-y-1">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Current Schedule</p>
+            <p className="text-xs text-slate-600 flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" /> {meetup.date}
+              <Clock className="h-3.5 w-3.5 text-slate-400 ml-2" /> {meetup.time}
+            </p>
+            <p className="text-xs text-slate-600 flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 text-slate-400" /> {meetup.location}
+            </p>
+          </div>
+
+          {/* New Date & Time */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">New Date</p>
+              <select value={date} onChange={e => setDate(e.target.value)}
+                className="w-full h-10 rounded-xl border border-input bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                {DATE_OPTIONS.map(d => <option key={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">New Time</p>
+              <select value={time} onChange={e => setTime(e.target.value)}
+                className="w-full h-10 rounded-xl border border-input bg-slate-50 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                {TIME_SLOTS.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* New Location */}
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">New Location</p>
+            <div className="flex flex-wrap gap-2">
+              {campusLocations.map(l => (
+                <button key={l} onClick={() => setLocation(l)}
+                  className={cn("text-xs font-semibold px-3 py-1.5 rounded-full border-2 transition-all flex items-center gap-1.5",
+                    location === l ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-400")}>
+                  <MapPin className="h-3 w-3" />{l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+              Reason / Note <span className="font-normal normal-case text-slate-400">(optional)</span>
+            </p>
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="e.g. I have a lab session, can we move it to evening?"
+              className="w-full rounded-xl border border-input bg-slate-50 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          </div>
+
+          {!changed && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 font-semibold">
+              ⚠️ Change at least one field (date, time, or location) before sending.
+            </p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 flex gap-3 flex-none">
+          <button onClick={onClose}
+            className="px-5 h-11 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+          <button disabled={!changed}
+            onClick={() => { onSave(date, time, location, notes); onClose(); }}
+            className={cn("flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all",
+              changed
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-slate-100 text-slate-400 cursor-not-allowed")}>
+            <Pencil className="h-4 w-4" /> Send Edit Request
+          </button>
         </div>
       </motion.div>
     </div>
@@ -1085,11 +1209,16 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
    MEETUPS TAB
 ══════════════════════════════════════════════════════════ */
 function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => void }) {
+  const { user } = useAuth();
+  const college = user?.college ?? "NIT Trichy";
+
   const [meetups, setMeetups] = useState<Meetup[]>([
     { id: "mu1", withName: "Riya Sharma", withId: "c1", type: "Study Session", date: "Tomorrow", time: "4:00 PM", location: "Library — Study Room A", notes: "Bring DS notes", status: "confirmed", proposedBy: "me", purpose: "Study Partner", availableDays: ["Monday","Wednesday","Friday"], preferredTimeSlot: "Afternoon (12pm–4pm)", editCount: 0 },
-    { id: "mu2", withName: "Sneha Nair", withId: "c3", type: "Coffee Chat", date: "This Saturday", time: "11:00 AM", location: "Central Cafeteria", notes: "", status: "pending", proposedBy: "them", purpose: "Friendship", availableDays: ["Saturday","Sunday"], preferredTimeSlot: "Morning (8am–12pm)", editCount: 2, editRequestBy: "them" },
-    { id: "mu3", withName: "Arjun Patel", withId: "c2", type: "Campus Walk", date: "Next Monday", time: "5:00 PM", location: "Central Garden", notes: "Around the lake trail", status: "pending", proposedBy: "me", purpose: "Friendship", availableDays: ["Monday","Thursday","Sunday"], preferredTimeSlot: "Evening (4pm–8pm)", editCount: 1, editRequestBy: "me" },
+    { id: "mu2", withName: "Sneha Nair", withId: "c3", type: "Coffee Chat", date: "This Saturday", time: "11:00 AM", location: "Central Cafeteria", notes: "", status: "pending", proposedBy: "them", purpose: "Friendship", availableDays: ["Saturday","Sunday"], preferredTimeSlot: "Morning (8am–12pm)", editCount: 2, editRequestBy: "them", pendingDate: "Next Sunday", pendingTime: "3:00 PM", pendingLocation: "Central Garden", pendingNotes: "Saturday doesn't work for me, can we do Sunday afternoon?" },
+    { id: "mu3", withName: "Arjun Patel", withId: "c2", type: "Campus Walk", date: "Next Monday", time: "5:00 PM", location: "Central Garden", notes: "Around the lake trail", status: "pending", proposedBy: "me", purpose: "Friendship", availableDays: ["Monday","Thursday","Sunday"], preferredTimeSlot: "Evening (4pm–8pm)", editCount: 1, editRequestBy: "me", pendingDate: "Next Monday", pendingTime: "6:00 PM", pendingLocation: "Central Garden", pendingNotes: "Can we push it an hour later?" },
   ]);
+
+  const [editFormOpen, setEditFormOpen] = useState<Meetup | null>(null);
 
   const MAX_EDITS = 3;
 
@@ -1106,8 +1235,8 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
     notify("Marked as completed! ⭐");
   };
 
-  // Request an edit — increments editCount; auto-declines if limit exceeded
-  const requestEdit = (id: string) => {
+  // Request an edit with a specific new schedule
+  const requestEdit = (id: string, pendingDate: string, pendingTime: string, pendingLocation: string, pendingNotes: string) => {
     setMeetups(p => p.map(m => {
       if (m.id !== id) return m;
       const next = m.editCount + 1;
@@ -1120,14 +1249,26 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
       } else {
         notify(`Edit request sent to ${m.withName}. (${next}/${MAX_EDITS} edits used)`);
       }
-      return { ...m, editCount: next, editRequestBy: "me", status: "pending" };
+      return { ...m, editCount: next, editRequestBy: "me", status: "pending", pendingDate, pendingTime, pendingLocation, pendingNotes };
     }));
   };
 
-  // Respond to an edit request from them
+  // Respond to an edit request from them — accept applies their pending values
   const acceptEdit = (id: string) => {
-    setMeetups(p => p.map(m => m.id === id ? { ...m, status: "confirmed", editRequestBy: undefined } : m));
-    notify("Edit accepted — meetup confirmed! ✅");
+    setMeetups(p => p.map(m => {
+      if (m.id !== id) return m;
+      return {
+        ...m,
+        status: "confirmed",
+        editRequestBy: undefined,
+        date: m.pendingDate ?? m.date,
+        time: m.pendingTime ?? m.time,
+        location: m.pendingLocation ?? m.location,
+        notes: m.pendingNotes ?? m.notes,
+        pendingDate: undefined, pendingTime: undefined, pendingLocation: undefined, pendingNotes: undefined,
+      };
+    }));
+    notify("Edit accepted — schedule updated! ✅");
   };
   const declineEdit = (id: string) => {
     setMeetups(p => p.map(m => {
@@ -1135,10 +1276,10 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
       const next = m.editCount + 1;
       if (next > MAX_EDITS) {
         notify(`Max edits exceeded — meetup with ${m.withName} cancelled.`, "warn");
-        return { ...m, status: "cancelled", editCount: next };
+        return { ...m, status: "cancelled", editCount: next, pendingDate: undefined, pendingTime: undefined, pendingLocation: undefined, pendingNotes: undefined };
       }
       notify(`Edit declined. ${m.withName} has ${MAX_EDITS - next} edit request(s) remaining.`, "warn");
-      return { ...m, editCount: next, editRequestBy: undefined, status: "pending" };
+      return { ...m, editCount: next, editRequestBy: undefined, status: "pending", pendingDate: undefined, pendingTime: undefined, pendingLocation: undefined, pendingNotes: undefined };
     }));
   };
 
@@ -1224,13 +1365,38 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
 
               {m.notes && <p className="text-xs text-slate-600 bg-white/70 px-3 py-2 rounded-xl border border-slate-100">📝 {m.notes}</p>}
 
-              {/* Incoming edit request from them */}
+              {/* Incoming edit request from them — shows what they proposed */}
               {hasIncomingEdit && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 space-y-2">
                   <p className="text-xs font-bold text-blue-700 flex items-center gap-1.5">
                     <Pencil className="h-3 w-3" /> {m.withName} wants to reschedule
                     <span className="ml-auto text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded-full">{m.editCount}/{MAX_EDITS} edits</span>
                   </p>
+
+                  {/* Show what they're proposing */}
+                  {(m.pendingDate || m.pendingTime || m.pendingLocation) && (
+                    <div className="bg-white/80 rounded-lg px-3 py-2 border border-blue-100 space-y-1">
+                      <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Proposed changes</p>
+                      {(m.pendingDate !== m.date || m.pendingTime !== m.time) && (
+                        <p className="text-xs text-slate-700 flex items-center gap-1.5">
+                          <Calendar className="h-3 w-3 text-blue-400" />
+                          <span className="line-through text-slate-400">{m.date} at {m.time}</span>
+                          <span className="font-semibold text-blue-700">→ {m.pendingDate} at {m.pendingTime}</span>
+                        </p>
+                      )}
+                      {m.pendingLocation && m.pendingLocation !== m.location && (
+                        <p className="text-xs text-slate-700 flex items-center gap-1.5">
+                          <MapPin className="h-3 w-3 text-blue-400" />
+                          <span className="line-through text-slate-400">{m.location}</span>
+                          <span className="font-semibold text-blue-700">→ {m.pendingLocation}</span>
+                        </p>
+                      )}
+                      {m.pendingNotes && (
+                        <p className="text-xs text-slate-500 italic">"{m.pendingNotes}"</p>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <Button size="sm" className="flex-1 h-8 bg-blue-600 hover:bg-blue-700 text-xs font-bold" onClick={() => acceptEdit(m.id)}>
                       <Check className="h-3 w-3 mr-1" /> Accept Changes
@@ -1254,12 +1420,36 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
                 </div>
               )}
 
-              {/* Waiting for them */}
+              {/* Waiting for them — show what you proposed */}
               {hasSentEdit && (
-                <p className="text-xs text-blue-600 font-semibold flex items-center gap-1.5">
-                  <Clock className="h-3 w-3" /> Edit request sent — waiting for {m.withName}…
-                  <span className="ml-auto text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{m.editCount}/{MAX_EDITS}</span>
-                </p>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 space-y-1.5">
+                  <p className="text-xs text-blue-600 font-semibold flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" /> Edit request sent — waiting for {m.withName}…
+                    <span className="ml-auto text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">{m.editCount}/{MAX_EDITS}</span>
+                  </p>
+                  {(m.pendingDate || m.pendingTime || m.pendingLocation) && (
+                    <div className="bg-white rounded-lg px-3 py-2 border border-slate-100 space-y-1">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Your proposed change</p>
+                      {(m.pendingDate !== m.date || m.pendingTime !== m.time) && (
+                        <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                          <Calendar className="h-3 w-3 text-slate-400" />
+                          <span className="line-through text-slate-400">{m.date} at {m.time}</span>
+                          <span className="font-semibold text-slate-700">→ {m.pendingDate} at {m.pendingTime}</span>
+                        </p>
+                      )}
+                      {m.pendingLocation && m.pendingLocation !== m.location && (
+                        <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                          <MapPin className="h-3 w-3 text-slate-400" />
+                          <span className="line-through text-slate-400">{m.location}</span>
+                          <span className="font-semibold text-slate-700">→ {m.pendingLocation}</span>
+                        </p>
+                      )}
+                      {m.pendingNotes && (
+                        <p className="text-xs text-slate-500 italic">"{m.pendingNotes}"</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
               {m.proposedBy === "me" && m.status === "pending" && !hasSentEdit && (
                 <p className="text-xs text-amber-600 font-semibold flex items-center gap-1.5">
@@ -1278,7 +1468,7 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
                       className={cn("h-9 text-xs font-bold", editsLeft === 1
                         ? "border-red-200 text-red-600 hover:bg-red-50"
                         : "border-blue-200 text-blue-600 hover:bg-blue-50")}
-                      onClick={() => requestEdit(m.id)}>
+                      onClick={() => setEditFormOpen(m)}>
                       <Pencil className="h-3.5 w-3.5 mr-1" />
                       Request Edit {m.editCount > 0 ? `(${editsLeft} left)` : ""}
                     </Button>
@@ -1301,6 +1491,21 @@ function MeetupsTab({ notify }: { notify: (m: string, t?: "success"|"warn") => v
           </motion.div>
         );
       })}
+
+      {/* Edit Request Form modal */}
+      <AnimatePresence>
+        {editFormOpen && (
+          <EditRequestForm
+            key="ef"
+            meetup={editFormOpen}
+            college={college}
+            onSave={(pendingDate, pendingTime, pendingLocation, pendingNotes) =>
+              requestEdit(editFormOpen.id, pendingDate, pendingTime, pendingLocation, pendingNotes)
+            }
+            onClose={() => setEditFormOpen(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
