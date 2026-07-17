@@ -175,6 +175,26 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
   );
 }
 
+function useProfilePhoto() {
+  const [photo, setPhoto] = useState<string | null>(() => {
+    try {
+      const s = localStorage.getItem("cc_match_profile");
+      if (s) { const p = JSON.parse(s); return p.photos?.[0] ?? null; }
+    } catch { /* ignore */ }
+    return null;
+  });
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "cc_match_profile") {
+        try { const p = JSON.parse(e.newValue ?? "{}"); setPhoto(p.photos?.[0] ?? null); } catch { /* ignore */ }
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+  return photo;
+}
+
 export function SidebarLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
@@ -182,6 +202,7 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
   const [bellOpen, setBellOpen] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
 
+  const profilePhoto = useProfilePhoto();
   const role = user?.role ?? "student";
   const roleMeta = ROLE_META[role];
   const RoleIcon = roleMeta.icon;
@@ -312,9 +333,13 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
         <div className="p-3 border-t border-sidebar-border/50 space-y-1">
           {user && (
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg">
-              <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0", roleMeta.bg)}>
-                <RoleIcon className={cn("h-3.5 w-3.5", roleMeta.color)} />
-              </div>
+              {profilePhoto ? (
+                <img src={profilePhoto} alt="You" className="w-7 h-7 rounded-lg object-cover flex-shrink-0 border border-white/20" />
+              ) : (
+                <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0", roleMeta.bg)}>
+                  <RoleIcon className={cn("h-3.5 w-3.5", roleMeta.color)} />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-white truncate">{user.name}</p>
                 <p className={cn("text-[10px] font-medium", roleMeta.color)}>{roleMeta.label}</p>

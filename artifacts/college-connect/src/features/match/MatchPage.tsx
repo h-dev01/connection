@@ -636,12 +636,20 @@ function CandidateProfileModal({ candidate, onConnect, onPass, onClose }: {
         className="relative w-full max-w-sm mx-4 bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}>
         {/* Header banner */}
-        <div className={cn("h-28 relative flex-none", candidate.color)}>
-          <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50"><X className="h-4 w-4" /></button>
-          <div className="absolute -bottom-8 left-5">
-            <div className={cn("w-16 h-16 rounded-2xl border-4 border-white flex items-center justify-center text-white font-bold text-xl shadow-md", candidate.color)}>
-              {candidate.initials}
-            </div>
+        <div className={cn("h-28 relative flex-none overflow-hidden", candidate.color)}>
+          {candidate.photo && (
+            <img src={candidate.photo} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
+          )}
+          <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full bg-black/30 text-white hover:bg-black/50 z-10"><X className="h-4 w-4" /></button>
+          <div className="absolute -bottom-8 left-5 z-10">
+            {candidate.photo ? (
+              <img src={candidate.photo} alt={candidate.name}
+                className="w-16 h-16 rounded-2xl border-4 border-white shadow-md object-cover" />
+            ) : (
+              <div className={cn("w-16 h-16 rounded-2xl border-4 border-white flex items-center justify-center text-white font-bold text-xl shadow-md", candidate.color)}>
+                {candidate.initials}
+              </div>
+            )}
           </div>
         </div>
         {/* Content */}
@@ -764,9 +772,14 @@ function DiscoverCard({
 
         {/* Avatar */}
         <div className="absolute -bottom-5 left-3">
-          <div className={cn("w-11 h-11 rounded-xl border-2 border-white flex items-center justify-center text-white font-bold text-sm shadow", candidate.color)}>
-            {candidate.initials}
-          </div>
+          {candidate.photo ? (
+            <img src={candidate.photo} alt={candidate.name}
+              className="w-11 h-11 rounded-xl border-2 border-white shadow object-cover" />
+          ) : (
+            <div className={cn("w-11 h-11 rounded-xl border-2 border-white flex items-center justify-center text-white font-bold text-sm shadow", candidate.color)}>
+              {candidate.initials}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1065,9 +1078,13 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
           ) : incoming.map(req => (
             <motion.div key={req.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -30 }}
               className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-4">
-              <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold flex-none", req.candidate.color)}>
-                {req.candidate.initials}
-              </div>
+              {req.candidate.photo ? (
+                <img src={req.candidate.photo} alt={req.candidate.name} className="w-12 h-12 rounded-xl border border-slate-200 object-cover flex-none" />
+              ) : (
+                <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold flex-none", req.candidate.color)}>
+                  {req.candidate.initials}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h4 className="font-bold text-slate-900 text-sm">{req.candidate.name}</h4>
@@ -1103,9 +1120,13 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
           ) : outgoing.map(req => (
             <motion.div key={req.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
               className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex items-center gap-4">
-              <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold flex-none", req.candidate.color)}>
-                {req.candidate.initials}
-              </div>
+              {req.candidate.photo ? (
+                <img src={req.candidate.photo} alt={req.candidate.name} className="w-12 h-12 rounded-xl border border-slate-200 object-cover flex-none" />
+              ) : (
+                <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold flex-none", req.candidate.color)}>
+                  {req.candidate.initials}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <h4 className="font-bold text-slate-900 text-sm">{req.candidate.name}</h4>
                 <p className="text-xs text-slate-500">{req.candidate.dept} · {req.candidate.year}</p>
@@ -1133,9 +1154,13 @@ function MyMatchesTab({ notify }: { notify: (m: string, t?: "success"|"warn") =>
             <motion.div key={match.id} layout initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}
               className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-3">
               <div className="flex items-center gap-3">
-                <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold", match.candidate.color)}>
-                  {match.candidate.initials}
-                </div>
+                {match.candidate.photo ? (
+                  <img src={match.candidate.photo} alt={match.candidate.name} className="w-12 h-12 rounded-xl border border-slate-200 object-cover" />
+                ) : (
+                  <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold", match.candidate.color)}>
+                    {match.candidate.initials}
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <h4 className="font-bold text-slate-900">{match.candidate.name}</h4>
                   <p className="text-xs text-slate-500">{match.candidate.dept}</p>
