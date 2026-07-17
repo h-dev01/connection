@@ -6,10 +6,15 @@ import { createContext, useContext, useState, useCallback } from "react";
 import {
   Bell, BookOpen, ShoppingBag, Users, Briefcase, Heart,
   Star, MessageSquare, Upload, Calendar, Trophy, UserPlus,
-  Megaphone, CalendarCheck, Pencil, Ban,
+  Megaphone, CalendarCheck, Pencil, Check, X,
 } from "lucide-react";
 
 export type NotifCategory = "all" | "study" | "marketplace" | "community" | "career" | "match";
+
+export interface NotifAction {
+  label: string;
+  variant: "accept" | "decline";
+}
 
 export interface Notification {
   id: string;
@@ -22,23 +27,41 @@ export interface Notification {
   time: string;
   read: boolean;
   href?: string;
+  actions?: NotifAction[];
+  /** set after the user resolves an actionable notif */
+  resolved?: "accepted" | "declined";
 }
 
 const SEED_NOTIFS: Notification[] = [
   {
     id: "m1", category: "match", icon: Heart, iconColor: "text-rose-600", iconBg: "bg-rose-100",
-    title: "New connect request", body: "Riya Sharma wants to connect with you as a Study Partner.",
+    title: "New connect request",
+    body: "Riya Sharma wants to connect with you as a Study Partner.",
     time: "Just now", read: false, href: "/match",
+    actions: [
+      { label: "Accept", variant: "accept" },
+      { label: "Decline", variant: "decline" },
+    ],
   },
   {
     id: "m2", category: "match", icon: CalendarCheck, iconColor: "text-blue-600", iconBg: "bg-blue-100",
-    title: "Meetup proposed", body: "Arjun Patel proposed a Campus Walk on Next Monday at 5:00 PM.",
+    title: "Meetup proposed",
+    body: "Arjun Patel proposed a Campus Walk on Next Monday at 5:00 PM.",
     time: "5 min ago", read: false, href: "/match",
+    actions: [
+      { label: "Accept", variant: "accept" },
+      { label: "Decline", variant: "decline" },
+    ],
   },
   {
     id: "m3", category: "match", icon: Pencil, iconColor: "text-amber-600", iconBg: "bg-amber-100",
-    title: "Meetup edit request", body: "Sneha Nair wants to reschedule your Coffee Chat. (2/3 edits used)",
+    title: "Meetup edit request",
+    body: "Sneha Nair wants to reschedule your Coffee Chat. (2/3 edits used)",
     time: "12 min ago", read: false, href: "/match",
+    actions: [
+      { label: "Accept changes", variant: "accept" },
+      { label: "Decline edit", variant: "decline" },
+    ],
   },
   {
     id: "1", category: "study", icon: Upload, iconColor: "text-blue-600", iconBg: "bg-blue-100",
@@ -122,6 +145,7 @@ interface NotificationsContextValue {
   dismiss: (id: string) => void;
   clearAll: () => void;
   addNotif: (n: Omit<Notification, "id" | "read" | "time">) => void;
+  resolveAction: (id: string, action: "accepted" | "declined") => void;
 }
 
 const Ctx = createContext<NotificationsContextValue | null>(null);
@@ -145,8 +169,21 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     setNotifs(p => [n, ...p]);
   }, []);
 
+  /** Mark as read + resolved; replace actions with a resolved badge */
+  const resolveAction = useCallback((id: string, action: "accepted" | "declined") => {
+    setNotifs(p => p.map(n =>
+      n.id === id
+        ? { ...n, read: true, actions: undefined, resolved: action }
+        : n
+    ));
+  }, []);
+
   return (
-    <Ctx.Provider value={{ notifs, unreadCount: notifs.filter(n => !n.read).length, markRead, markAllRead, dismiss, clearAll, addNotif }}>
+    <Ctx.Provider value={{
+      notifs,
+      unreadCount: notifs.filter(n => !n.read).length,
+      markRead, markAllRead, dismiss, clearAll, addNotif, resolveAction,
+    }}>
       {children}
     </Ctx.Provider>
   );

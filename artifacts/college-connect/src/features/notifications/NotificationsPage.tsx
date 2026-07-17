@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, BookOpen, ShoppingBag, Users, Briefcase, Heart,
-  CheckCheck, Trash2, Filter,
+  CheckCheck, Trash2, Filter, Check, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ const FILTERS: { id: NotifCategory; label: string; icon: React.ElementType }[] =
 ];
 
 export default function NotificationsPage() {
-  const { notifs, unreadCount, markRead, markAllRead, dismiss, clearAll } = useNotifications();
+  const { notifs, unreadCount, markRead, markAllRead, dismiss, clearAll, resolveAction } = useNotifications();
   const [active, setActive] = useState<NotifCategory>("all");
 
   const visible = active === "all" ? notifs : notifs.filter((n) => n.category === active);
@@ -108,6 +108,7 @@ export default function NotificationsPage() {
           ) : (
             visible.map((n) => {
               const Icon = n.icon;
+              const hasActions = n.actions && n.actions.length > 0 && !n.resolved;
               return (
                 <motion.div
                   key={n.id}
@@ -115,18 +116,21 @@ export default function NotificationsPage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: 40, transition: { duration: 0.2 } }}
-                  onClick={() => markRead(n.id)}
+                  onClick={!hasActions ? () => markRead(n.id) : undefined}
                   className={cn(
-                    "group flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all",
+                    "group flex items-start gap-4 p-4 rounded-xl border transition-all",
+                    !hasActions && "cursor-pointer",
                     n.read
                       ? "bg-white border-slate-100 hover:border-slate-200"
                       : "bg-blue-50/60 border-blue-100 hover:border-blue-200"
                   )}
                 >
+                  {/* Icon */}
                   <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", n.iconBg)}>
                     <Icon className={cn("h-5 w-5", n.iconColor)} />
                   </div>
 
+                  {/* Text */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <p className={cn("text-sm leading-snug", n.read ? "font-medium text-slate-700" : "font-semibold text-slate-900")}>
@@ -135,8 +139,51 @@ export default function NotificationsPage() {
                       <span className="text-[11px] text-slate-400 whitespace-nowrap flex-shrink-0 mt-0.5">{n.time}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{n.body}</p>
+
+                    {/* Action buttons */}
+                    {hasActions && (
+                      <div className="flex gap-2 mt-3">
+                        {n.actions!.map((a) => (
+                          <button
+                            key={a.variant}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              resolveAction(n.id, a.variant === "accept" ? "accepted" : "declined");
+                            }}
+                            className={cn(
+                              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
+                              a.variant === "accept"
+                                ? "bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm"
+                                : "bg-white hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200"
+                            )}
+                          >
+                            {a.variant === "accept"
+                              ? <Check className="h-3 w-3" />
+                              : <X className="h-3 w-3" />
+                            }
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Resolved badge */}
+                    {n.resolved && (
+                      <div className={cn(
+                        "inline-flex items-center gap-1 mt-2.5 px-2.5 py-1 rounded-full text-xs font-semibold",
+                        n.resolved === "accepted"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                          : "bg-slate-50 text-slate-500 border border-slate-100"
+                      )}>
+                        {n.resolved === "accepted"
+                          ? <><Check className="h-3 w-3" /> Accepted</>
+                          : <><X className="h-3 w-3" /> Declined</>
+                        }
+                      </div>
+                    )}
                   </div>
 
+                  {/* Unread dot + dismiss */}
                   <div className="flex flex-col items-center gap-2 flex-shrink-0">
                     {!n.read && <div className="w-2 h-2 rounded-full bg-blue-500 mt-1" />}
                     <button

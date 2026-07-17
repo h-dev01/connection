@@ -8,7 +8,7 @@ import {
   Bell, BookOpen, ShoppingBag, Users,
   Briefcase, Tent, User, Settings, ShieldCheck,
   Heart, LogOut, GraduationCap, ShieldAlert,
-  CheckCheck, Trash2, ArrowRight,
+  CheckCheck, Trash2, ArrowRight, Check, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,12 +37,12 @@ const ROLE_META: Record<string, { label: string; icon: React.ElementType; color:
 };
 
 function NotificationDropdown({ onClose }: { onClose: () => void }) {
-  const { notifs, unreadCount, markRead, markAllRead, dismiss } = useNotifications();
+  const { notifs, unreadCount, markRead, markAllRead, dismiss, resolveAction } = useNotifications();
   const [, navigate] = useLocation();
   const preview = notifs.slice(0, 6);
 
   return (
-    <div className="absolute left-[260px] top-0 z-50 w-80 rounded-xl shadow-2xl border border-slate-200 bg-white overflow-hidden">
+    <div className="absolute left-[260px] top-0 z-50 w-[340px] rounded-xl shadow-2xl border border-slate-200 bg-white overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
         <div className="flex items-center gap-2">
@@ -65,7 +65,7 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Notification list */}
-      <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-50">
+      <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-50">
         {preview.length === 0 ? (
           <div className="py-10 text-center text-slate-400">
             <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -74,28 +74,77 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
         ) : (
           preview.map((n) => {
             const Icon = n.icon;
+            const hasActions = n.actions && n.actions.length > 0 && !n.resolved;
             return (
               <div
                 key={n.id}
-                onClick={() => {
-                  markRead(n.id);
-                  if (n.href) { navigate(n.href); onClose(); }
-                }}
                 className={cn(
-                  "group flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors",
+                  "group flex items-start gap-3 px-4 py-3 transition-colors",
+                  !hasActions && "cursor-pointer",
                   n.read ? "bg-white hover:bg-slate-50" : "bg-blue-50/70 hover:bg-blue-50"
                 )}
+                onClick={!hasActions ? () => {
+                  markRead(n.id);
+                  if (n.href) { navigate(n.href); onClose(); }
+                } : undefined}
               >
+                {/* Icon */}
                 <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5", n.iconBg)}>
                   <Icon className={cn("h-4 w-4", n.iconColor)} />
                 </div>
+
+                {/* Body */}
                 <div className="flex-1 min-w-0">
                   <p className={cn("text-xs leading-snug", n.read ? "font-medium text-slate-600" : "font-semibold text-slate-900")}>
                     {n.title}
                   </p>
                   <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{n.body}</p>
                   <p className="text-[10px] text-slate-400 mt-1">{n.time}</p>
+
+                  {/* Action buttons */}
+                  {hasActions && (
+                    <div className="flex gap-1.5 mt-2">
+                      {n.actions!.map((a) => (
+                        <button
+                          key={a.variant}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            resolveAction(n.id, a.variant === "accept" ? "accepted" : "declined");
+                          }}
+                          className={cn(
+                            "flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all",
+                            a.variant === "accept"
+                              ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                              : "bg-slate-100 hover:bg-red-100 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200"
+                          )}
+                        >
+                          {a.variant === "accept"
+                            ? <Check className="h-2.5 w-2.5" />
+                            : <X className="h-2.5 w-2.5" />
+                          }
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Resolved badge */}
+                  {n.resolved && (
+                    <div className={cn(
+                      "inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[10px] font-semibold",
+                      n.resolved === "accepted"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "bg-slate-100 text-slate-500"
+                    )}>
+                      {n.resolved === "accepted"
+                        ? <><Check className="h-2.5 w-2.5" /> Accepted</>
+                        : <><X className="h-2.5 w-2.5" /> Declined</>
+                      }
+                    </div>
+                  )}
                 </div>
+
+                {/* Unread dot + dismiss */}
                 <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
                   {!n.read && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1" />}
                   <button
@@ -139,7 +188,6 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
 
   const visibleAdminItems = ADMIN_ITEMS.filter((item) => item.roles.includes(role));
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
@@ -215,13 +263,11 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
                   )} />
                   <span className="font-medium text-sm">{item.label}</span>
 
-                  {/* Unread badge on nav item for Notifications */}
                   {isBell && unreadCount > 0 && !isActive && (
                     <span className="ml-auto text-[10px] bg-rose-500 text-white rounded-full px-1.5 py-0.5 font-bold leading-none">
                       {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                   )}
-
                   {!isBell && item.badge && !isActive && (
                     <span className="ml-auto text-[10px] bg-rose-500 text-white rounded-full px-1.5 py-0.5 font-bold leading-none">
                       {item.badge}
@@ -241,7 +287,6 @@ export function SidebarLayout({ children }: { children: React.ReactNode }) {
                   {role === "admin" ? "Admin Controls" : "Moderator"}
                 </p>
               </div>
-
               {visibleAdminItems.map((item) => {
                 const isActive = location === item.href;
                 return (
